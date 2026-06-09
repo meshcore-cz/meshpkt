@@ -9,8 +9,8 @@ import (
 
 // DirectText holds the decoded content of a TXT_MSG (direct text) message.
 type DirectText struct {
-	DestHash  byte // first byte of recipient's public key
-	SrcHash   byte // first byte of sender's public key
+	DestHash  byte // first byte of recipient's Ed25519 public key
+	SrcHash   byte // first byte of sender's Ed25519 public key
 	Timestamp time.Time
 	TxtType   byte // upper 6 bits of flags byte (0 = plain text)
 	Attempt   byte // lower 2 bits of flags byte
@@ -18,15 +18,10 @@ type DirectText struct {
 }
 
 // DirectTextPacket builds a flooded TXT_MSG wire packet encrypted with the
-// given 16-byte shared secret (derived from X25519 ECDH — see meshpkt.SharedSecret).
+// given 16-byte shared secret.
 //
 // destHash and srcHash are the first bytes of the recipient's and sender's
-// public keys respectively, used for lightweight routing.
-//
-// Note: on-air interoperability with real MeshCore devices requires the shared
-// secret to be derived the same way as the firmware (Ed25519 keys converted to
-// Montgomery form then X25519 ECDH); meshpkt.SharedSecret performs this derivation.
-// Cross-check against firmware Identity::calcSharedSecret before relying on it.
+// Ed25519 public keys respectively, used for lightweight routing.
 func DirectTextPacket(shared16 []byte, destHash, srcHash byte, text string, ts time.Time, txtType, attempt byte, opts ...Option) ([]byte, error) {
 	o := &packetOptions{pathHashSize: defaultPathHashSize}
 	for _, opt := range opts {
@@ -58,8 +53,6 @@ func DirectTextPacket(shared16 []byte, destHash, srcHash byte, text string, ts t
 // DecodeDirectTextPayload decodes a TXT_MSG payload using the given 16-byte
 // shared secret. Returns an error if the MAC is wrong or the payload is
 // malformed.
-//
-// payload is the Payload field of a Packet returned by DecodePacket.
 func DecodeDirectTextPayload(shared16, payload []byte) (DirectText, error) {
 	if len(shared16) < cipherKeySize {
 		return DirectText{}, fmt.Errorf("meshpkt: shared secret too short")
@@ -82,48 +75,25 @@ func DecodeDirectTextPayload(shared16, payload []byte) (DirectText, error) {
 	return parseDirectTextPlaintext(destHash, srcHash, plaintext)
 }
 
-// DirectTextPacketFromKeys performs X25519 ECDH using privHex and peerPubHex,
-// derives dest/src hashes from the public keys (first byte of each), and
-// encodes the TXT_MSG packet. This is a convenience wrapper that removes the
-// need to call SharedSecret and ParsePublicKey separately.
-func DirectTextPacketFromKeys(privHex, peerPubHex, text string, ts time.Time, opts ...Option) ([]byte, error) {
-	shared, myPub, peerPub, err := keysAndSecret(privHex, peerPubHex)
+// DirectTextPacketFromIdentity derives the shared secret from id and
+// peerPublicKey (Ed25519), then encodes a TXT_MSG packet.
+// destHash = peerPublicKey[0], srcHash = id.PublicKey[0].
+func DirectTextPacketFromIdentity(id Identity, peerPublicKey [32]byte, text string, ts time.Time, opts ...Option) ([]byte, error) {
+	shared, err := id.SharedSecret(peerPublicKey)
 	if err != nil {
 		return nil, err
 	}
-	return DirectTextPacket(shared[:cipherKeySize], peerPub[0], myPub[0], text, ts, 0, 0, opts...)
+	return DirectTextPacket(shared[:cipherKeySize], peerPublicKey[0], id.PublicKey[0], text, ts, 0, 0, opts...)
 }
 
-// DecodeDirectTextPayloadFromKeys performs X25519 ECDH using privHex and
-// peerPubHex to recover the shared secret, then decodes the TXT_MSG payload.
-func DecodeDirectTextPayloadFromKeys(payload []byte, privHex, peerPubHex string) (DirectText, error) {
-	shared, _, _, err := keysAndSecret(privHex, peerPubHex)
+// DecodeDirectTextPayloadWithIdentity derives the shared secret from id and
+// peerPublicKey (Ed25519) and decodes the TXT_MSG payload.
+func DecodeDirectTextPayloadWithIdentity(payload []byte, id Identity, peerPublicKey [32]byte) (DirectText, error) {
+	shared, err := id.SharedSecret(peerPublicKey)
 	if err != nil {
 		return DirectText{}, err
 	}
 	return DecodeDirectTextPayload(shared[:cipherKeySize], payload)
-}
-
-// keysAndSecret is the shared helper: parses both keys, runs ECDH, and returns
-// the 32-byte shared secret along with the raw public key bytes.
-func keysAndSecret(privHex, peerPubHex string) (shared, myPub, peerPub []byte, err error) {
-	myPubHex, err := PublicKeyFromPrivate(privHex)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("meshpkt: derive public key: %w", err)
-	}
-	myPub, err = ParsePublicKey(myPubHex)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	peerPub, err = ParsePublicKey(peerPubHex)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	shared, err = SharedSecret(privHex, peerPubHex)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return shared, myPub, peerPub, nil
 }
 
 func buildDirectTextPlaintext(text string, flags byte, ts time.Time) []byte {

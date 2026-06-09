@@ -46,9 +46,20 @@ type RawPayload struct {
 // DecodeContext carries shared secrets and identity material needed by
 // the typed payload decoders.
 type DecodeContext struct {
+	// Identity is the local node's Ed25519 identity. When set together with
+	// PeerPublicKey, the shared secret is derived automatically for TXT_MSG,
+	// REQ, RESPONSE, and PATH payloads. For ANON_REQ, the shared secret is
+	// derived from Identity and the sender's Ed25519 public key embedded in
+	// the payload.
+	Identity *Identity
+
+	// PeerPublicKey is the peer's 32-byte Ed25519 public key, used together
+	// with Identity to derive the shared secret when Shared16 is not provided.
+	PeerPublicKey *[32]byte
+
 	// Shared16 is the 16-byte AES-128 key for encrypted payloads (REQ,
-	// RESPONSE, TXT_MSG, PATH). Derived via Identity.SharedSecret then
-	// take the first 16 bytes.
+	// RESPONSE, TXT_MSG, PATH). Takes precedence over Identity+PeerPublicKey
+	// when set.
 	Shared16 []byte
 
 	// ChannelSecret is the 16-byte channel PSK for GRP_TXT / GRP_DATA.
@@ -56,6 +67,21 @@ type DecodeContext struct {
 
 	// Registry holds optional application-defined body decoders.
 	Registry *Registry
+}
+
+// resolveShared16 returns the 16-byte key from ctx: Shared16 takes precedence;
+// otherwise it is derived from Identity and PeerPublicKey.
+func (ctx DecodeContext) resolveShared16() []byte {
+	if len(ctx.Shared16) >= cipherKeySize {
+		return ctx.Shared16[:cipherKeySize]
+	}
+	if ctx.Identity != nil && ctx.PeerPublicKey != nil {
+		s, err := ctx.Identity.SharedSecret(*ctx.PeerPublicKey)
+		if err == nil {
+			return s[:cipherKeySize]
+		}
+	}
+	return nil
 }
 
 // DecodePayload dispatches pkt.Payload to the appropriate typed decoder
@@ -89,16 +115,18 @@ func DecodePayload(pkt Packet, ctx DecodeContext) (any, error) {
 		return DecodeGrpDataPayload(ctx.ChannelSecret, pkt.Payload)
 
 	case PayloadTxtMsg:
-		if len(ctx.Shared16) < cipherKeySize {
+		key := ctx.resolveShared16()
+		if key == nil {
 			return RawPayload{Type: pkt.Type, Raw: pkt.Payload}, nil
 		}
-		return DecodeDirectTextPayload(ctx.Shared16, pkt.Payload)
+		return DecodeDirectTextPayload(key, pkt.Payload)
 
 	case PayloadReq:
-		if len(ctx.Shared16) < cipherKeySize {
+		key := ctx.resolveShared16()
+		if key == nil {
 			return RawPayload{Type: pkt.Type, Raw: pkt.Payload}, nil
 		}
-		req, err := DecodeReqPayload(ctx.Shared16, pkt.Payload)
+		req, err := DecodeReqPayload(key, pkt.Payload)
 		if err != nil {
 			return nil, err
 		}
@@ -114,16 +142,18 @@ func DecodePayload(pkt Packet, ctx DecodeContext) (any, error) {
 		return req, nil
 
 	case PayloadResponse:
-		if len(ctx.Shared16) < cipherKeySize {
+		key := ctx.resolveShared16()
+		if key == nil {
 			return RawPayload{Type: pkt.Type, Raw: pkt.Payload}, nil
 		}
-		return DecodeResponsePayload(ctx.Shared16, pkt.Payload)
+		return DecodeResponsePayload(key, pkt.Payload)
 
 	case PayloadPath:
-		if len(ctx.Shared16) < cipherKeySize {
+		key := ctx.resolveShared16()
+		if key == nil {
 			return RawPayload{Type: pkt.Type, Raw: pkt.Payload}, nil
 		}
-		return DecodePathPayload(ctx.Shared16, pkt.Payload)
+		return DecodePathPayload(key, pkt.Payload)
 
 	case PayloadTrace:
 		return DecodeTracePayload(pkt.Payload)
@@ -148,11 +178,18 @@ func DecodePayload(pkt Packet, ctx DecodeContext) (any, error) {
 		return c, nil
 
 	case PayloadAnonReq:
-		// ANON_REQ requires the recipient's private key — return raw if unavailable.
+		// Decode if an Identity is available; the sender's Ed25519 public key
+		// is embedded in the payload so no PeerPublicKey is required.
+		if ctx.Identity != nil {
+			a, err := DecodeAnonReqPayload(pkt.Payload, *ctx.Identity)
+			if err != nil {
+				return nil, err
+			}
+			return a, nil
+		}
 		return RawPayload{Type: pkt.Type, Raw: pkt.Payload}, nil
 
 	case PayloadRawCustom:
-		// RAW_CUSTOM is intentionally opaque; always raw pass-through.
 		return RawPayload{Type: pkt.Type, Raw: pkt.Payload}, nil
 
 	default:
