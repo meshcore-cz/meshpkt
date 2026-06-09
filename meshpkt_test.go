@@ -275,8 +275,9 @@ func TestDecodeAdvertPayload(t *testing.T) {
 	for i := 36; i < 100; i++ {
 		payload[i] = 0x55 // signature
 	}
-	// Appdata: flags=0 (no GPS), then name
-	payload = append(payload, 0x00)
+	// Appdata: flags=0x81 (chat node, has name), then name bytes.
+	// Bit 7 (0x80) = has_name; lower nibble 0x01 = chat node type.
+	payload = append(payload, 0x81)
 	payload = append(payload, "TestNode"...)
 
 	adv, err := DecodeAdvertPayload(payload)
@@ -293,7 +294,10 @@ func TestDecodeAdvertPayload(t *testing.T) {
 		t.Errorf("Name = %q, want TestNode", adv.Name)
 	}
 	if adv.HasGPS {
-		t.Error("HasGPS should be false when flags=0")
+		t.Error("HasGPS should be false when 0x10 flag not set")
+	}
+	if adv.NodeType != AdvertNodeChat {
+		t.Errorf("NodeType = %d, want %d (chat)", adv.NodeType, AdvertNodeChat)
 	}
 }
 

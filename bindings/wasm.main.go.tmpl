@@ -54,6 +54,8 @@ func main() {
 					args[i] = b
 				case meshpkt.ParamInt:
 					args[i] = jsArgs[i].Int()
+				case meshpkt.ParamFloat:
+					args[i] = jsArgs[i].Float()
 				}
 			}
 

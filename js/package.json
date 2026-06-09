@@ -1,0 +1,39 @@
+{
+  "name": "@meshcore-cz/meshpkt",
+  "version": "0.1.0",
+  "description": "MeshCore radio packet codec for JavaScript and TypeScript, powered by WebAssembly",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meshcore-cz/meshpkt.git",
+    "directory": "js"
+  },
+  "homepage": "https://github.com/meshcore-cz/meshpkt",
+  "bugs": {
+    "url": "https://github.com/meshcore-cz/meshpkt/issues"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./meshpkt.wasm": "./dist/meshpkt.wasm",
+    "./wasm_exec.js": "./dist/wasm_exec.js"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build:ts": "tsc -p tsconfig.json",
+    "pack:check": "npm pack --dry-run"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}
