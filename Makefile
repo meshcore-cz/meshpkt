@@ -1,6 +1,6 @@
 .PHONY: help fmt fmt-check tidy-check vet test check \
 	js-install js-generate js-generate-check js-wasm js-build js-pack js-check \
-	release
+	release npm-publish
 
 VERSION ?=
 TINYGO ?= tinygo
@@ -13,6 +13,7 @@ help:
 	@echo "  make js-build                  Build npm package and WASM module"
 	@echo "  make js-check                  Build and validate npm package"
 	@echo "  make release VERSION=v0.1.0    Create and push a release tag"
+	@echo "  make npm-publish               Build and publish the npm package"
 
 fmt:
 	gofmt -w .
@@ -104,3 +105,6 @@ release: check js-check
 	git tag -a "$(VERSION)" -m "meshpkt $(VERSION)"
 	git push origin "$(VERSION)"
 	@echo "Published $(VERSION)"
+
+npm-publish: js-check
+	cd $(JS_DIR) && npm publish --access public
