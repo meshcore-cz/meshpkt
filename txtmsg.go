@@ -32,8 +32,8 @@ func DirectTextPacket(shared16 []byte, destHash, srcHash byte, text string, ts t
 	for _, opt := range opts {
 		opt(o)
 	}
-	if o.pathHashSize < 1 || o.pathHashSize > 4 {
-		return nil, fmt.Errorf("meshpkt: unsupported path hash size %d (use 1–4)", o.pathHashSize)
+	if o.pathHashSize < 1 || o.pathHashSize > 3 {
+		return nil, fmt.Errorf("meshpkt: unsupported path hash size %d (use 1–3)", o.pathHashSize)
 	}
 	if len(shared16) < cipherKeySize {
 		return nil, fmt.Errorf("meshpkt: shared secret too short (%d bytes, need %d)", len(shared16), cipherKeySize)

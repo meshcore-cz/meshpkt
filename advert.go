@@ -3,6 +3,7 @@ package meshpkt
 import (
 	"crypto/ed25519"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -16,7 +17,7 @@ import (
 //
 // Appdata (all fields optional, controlled by flags byte):
 //
-//	[flags:1][lat?:4 int32 LE, ×1e-6°][lon?:4 int32 LE, ×1e-6°][feat1?:2][feat2?:2][name?:string]
+//	[flags:1][lat?:4 int32 LE, ×1e-6°][lon?:4 int32 LE, ×1e-6°][feat1?:2 LE][feat2?:2 LE][name?:string]
 //
 // Flags lower nibble: node type (0=unknown, 1=chat, 2=repeater, 3=room, 4=sensor)
 // Flags upper nibble: 0x10=has location, 0x20=has feature1, 0x40=has feature2, 0x80=has name
@@ -27,8 +28,23 @@ type Advert struct {
 	NodeType  byte      // 0=unknown, 1=chat, 2=repeater, 3=room, 4=sensor
 	HasGPS    bool      // true when Lat/Lon are valid
 	Lat, Lon  float64   // GPS coordinates in degrees (valid when HasGPS)
+	Feature1  uint16    // optional feature flags 1 (present when 0x20 flag set)
+	Feature2  uint16    // optional feature flags 2 (present when 0x40 flag set)
+	HasFeat1  bool      // true when Feature1 was present in the payload
+	HasFeat2  bool      // true when Feature2 was present in the payload
 	Name      string    // node name (empty if not advertised)
 }
+
+// Sentinel errors for strict ADVERT decoding.
+var (
+	ErrAdvertTooShort       = errors.New("meshpkt: ADVERT payload too short (need at least 100 bytes)")
+	ErrAdvertBadSignature   = errors.New("meshpkt: ADVERT signature verification failed")
+	ErrAdvertMissingGPS     = errors.New("meshpkt: ADVERT flags declare GPS but bytes are missing")
+	ErrAdvertMissingFeat1   = errors.New("meshpkt: ADVERT flags declare feature1 but bytes are missing")
+	ErrAdvertMissingFeat2   = errors.New("meshpkt: ADVERT flags declare feature2 but bytes are missing")
+	ErrAdvertLatOutOfRange  = errors.New("meshpkt: ADVERT latitude out of range [-90, 90]")
+	ErrAdvertLonOutOfRange  = errors.New("meshpkt: ADVERT longitude out of range [-180, 180]")
+)
 
 // AdvertNodeType constants for Advert.NodeType.
 const (
@@ -70,6 +86,12 @@ func EncodeAdvertPayload(adv Advert) ([]byte, error) {
 	if adv.HasGPS {
 		flags |= 0x10
 	}
+	if adv.HasFeat1 {
+		flags |= 0x20
+	}
+	if adv.HasFeat2 {
+		flags |= 0x40
+	}
 	if adv.Name != "" {
 		flags |= 0x80
 	}
@@ -82,6 +104,18 @@ func EncodeAdvertPayload(adv Advert) ([]byte, error) {
 		binary.LittleEndian.PutUint32(lonBytes[:], uint32(int32(math.Round(adv.Lon*1e6))))
 		buf = append(buf, latBytes[:]...)
 		buf = append(buf, lonBytes[:]...)
+	}
+
+	if adv.HasFeat1 {
+		var f [2]byte
+		binary.LittleEndian.PutUint16(f[:], adv.Feature1)
+		buf = append(buf, f[:]...)
+	}
+
+	if adv.HasFeat2 {
+		var f [2]byte
+		binary.LittleEndian.PutUint16(f[:], adv.Feature2)
+		buf = append(buf, f[:]...)
 	}
 
 	// Node name.
@@ -168,15 +202,64 @@ func SignAdvertPayload(payload, privKey []byte) ([]byte, error) {
 	return out, nil
 }
 
-// DecodeAdvertPayload decodes an ADVERT payload and verifies its Ed25519
-// signature. Returns an error if the payload is too short or if a non-zero
-// signature fails verification (all-zero signatures are accepted as unsigned).
-//
-// Optional appdata fields are parsed on a best-effort basis.
+// SignAdvert encodes adv, signs the payload with id, and returns a new Advert
+// with the Signature field set. The adv.PublicKey must match id.PublicKey.
+func SignAdvert(id Identity, adv Advert) (Advert, error) {
+	if len(adv.PublicKey) != 32 {
+		return Advert{}, fmt.Errorf("meshpkt: ADVERT public key must be 32 bytes")
+	}
+	for i := range 32 {
+		if adv.PublicKey[i] != id.PublicKey[i] {
+			return Advert{}, fmt.Errorf("meshpkt: ADVERT public key does not match identity")
+		}
+	}
+	payload, err := EncodeAdvertPayload(adv)
+	if err != nil {
+		return Advert{}, err
+	}
+	signed, err := SignAdvertPayload(payload, id.PrivateKey[:])
+	if err != nil {
+		return Advert{}, err
+	}
+	sig := signed[36:100]
+	out := adv
+	out.Signature = make([]byte, 64)
+	copy(out.Signature, sig)
+	return out, nil
+}
+
+// VerifyAdvert verifies the signature on adv.
+// Returns nil if the signature is valid, or ErrAdvertBadSignature if not.
+// All-zero signatures are treated as unsigned and return nil.
+func VerifyAdvert(adv Advert) error {
+	if len(adv.PublicKey) != 32 {
+		return fmt.Errorf("meshpkt: ADVERT public key must be 32 bytes")
+	}
+	if len(adv.Signature) == 0 || allZero(adv.Signature) {
+		return nil // unsigned
+	}
+	if len(adv.Signature) != 64 {
+		return ErrAdvertBadSignature
+	}
+	payload, err := EncodeAdvertPayload(adv)
+	if err != nil {
+		return err
+	}
+	if !VerifyAdvertSignature(payload) {
+		return ErrAdvertBadSignature
+	}
+	return nil
+}
+
+// DecodeAdvertPayload decodes an ADVERT payload applying all firmware
+// validation rules. Returns an error if:
+//   - payload < 100 bytes
+//   - a non-zero signature fails verification
+//   - flags declare GPS/feat1/feat2 but the bytes are missing
+//   - GPS coordinates are outside valid ranges
 func DecodeAdvertPayload(payload []byte) (Advert, error) {
-	// Fixed prefix: pubkey(32) + ts(4) + sig(64) = 100 bytes minimum.
 	if len(payload) < 100 {
-		return Advert{}, fmt.Errorf("meshpkt: ADVERT payload too short (%d bytes, need at least 100)", len(payload))
+		return Advert{}, ErrAdvertTooShort
 	}
 
 	a := Advert{
@@ -187,46 +270,66 @@ func DecodeAdvertPayload(payload []byte) (Advert, error) {
 	a.Timestamp = time.Unix(int64(binary.LittleEndian.Uint32(payload[32:36])), 0)
 	copy(a.Signature, payload[36:100])
 
-	// Verify signature. All-zero signatures are accepted (unsigned/synthetic packets).
 	if !allZero(a.Signature) {
 		if !ed25519.Verify(ed25519.PublicKey(a.PublicKey), advertSignedMessage(payload), a.Signature) {
-			return Advert{}, fmt.Errorf("meshpkt: ADVERT signature verification failed")
+			return Advert{}, ErrAdvertBadSignature
 		}
 	}
 
 	if len(payload) <= 100 {
 		return a, nil
 	}
+	return parseAdvertAppdata(payload, &a)
+}
 
-	// Appdata starts at offset 100.
+// DecodeAdvertPayloadStrict is an alias for DecodeAdvertPayload.
+func DecodeAdvertPayloadStrict(payload []byte) (Advert, error) {
+	return DecodeAdvertPayload(payload)
+}
+
+// parseAdvertAppdata fills in the optional appdata fields starting at offset 100.
+func parseAdvertAppdata(payload []byte, a *Advert) (Advert, error) {
 	off := 100
 	flags := payload[off]
 	off++
 	a.NodeType = flags & 0x0F
 
-	// Bit 4 (0x10): has location — lat/lon as int32 LE, degrees × 1e6.
 	if flags&0x10 != 0 {
-		if off+8 <= len(payload) {
-			lat := int32(binary.LittleEndian.Uint32(payload[off:]))
-			lon := int32(binary.LittleEndian.Uint32(payload[off+4:]))
-			a.Lat = float64(lat) / 1e6
-			a.Lon = float64(lon) / 1e6
-			a.HasGPS = true
+		if off+8 > len(payload) {
+			return Advert{}, ErrAdvertMissingGPS
 		}
+		lat := int32(binary.LittleEndian.Uint32(payload[off:]))
+		lon := int32(binary.LittleEndian.Uint32(payload[off+4:]))
+		a.Lat = float64(lat) / 1e6
+		a.Lon = float64(lon) / 1e6
+		if a.Lat < -90 || a.Lat > 90 {
+			return Advert{}, ErrAdvertLatOutOfRange
+		}
+		if a.Lon < -180 || a.Lon > 180 {
+			return Advert{}, ErrAdvertLonOutOfRange
+		}
+		a.HasGPS = true
 		off += 8
 	}
 
-	// Bit 5 (0x20): has feature 1 (2 bytes, reserved).
 	if flags&0x20 != 0 {
+		if off+2 > len(payload) {
+			return Advert{}, ErrAdvertMissingFeat1
+		}
+		a.Feature1 = binary.LittleEndian.Uint16(payload[off:])
+		a.HasFeat1 = true
 		off += 2
 	}
 
-	// Bit 6 (0x40): has feature 2 (2 bytes, reserved).
 	if flags&0x40 != 0 {
+		if off+2 > len(payload) {
+			return Advert{}, ErrAdvertMissingFeat2
+		}
+		a.Feature2 = binary.LittleEndian.Uint16(payload[off:])
+		a.HasFeat2 = true
 		off += 2
 	}
 
-	// Bit 7 (0x80): has name — remaining bytes.
 	if flags&0x80 != 0 && off < len(payload) {
 		name := string(payload[off:])
 		if idx := strings.IndexByte(name, 0); idx >= 0 {
@@ -235,5 +338,5 @@ func DecodeAdvertPayload(payload []byte) (Advert, error) {
 		a.Name = strings.TrimSpace(name)
 	}
 
-	return a, nil
+	return *a, nil
 }
