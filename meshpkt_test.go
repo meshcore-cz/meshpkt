@@ -89,7 +89,6 @@ func TestEncodeDecodePacket_TransportCodes(t *testing.T) {
 	}
 }
 
-
 func TestDecodePacket_TooShort(t *testing.T) {
 	if _, err := DecodePacket([]byte{0x15}); err == nil {
 		t.Fatal("expected error for 1-byte input")

@@ -37,13 +37,13 @@ type Advert struct {
 
 // Sentinel errors for strict ADVERT decoding.
 var (
-	ErrAdvertTooShort       = errors.New("meshpkt: ADVERT payload too short (need at least 100 bytes)")
-	ErrAdvertBadSignature   = errors.New("meshpkt: ADVERT signature verification failed")
-	ErrAdvertMissingGPS     = errors.New("meshpkt: ADVERT flags declare GPS but bytes are missing")
-	ErrAdvertMissingFeat1   = errors.New("meshpkt: ADVERT flags declare feature1 but bytes are missing")
-	ErrAdvertMissingFeat2   = errors.New("meshpkt: ADVERT flags declare feature2 but bytes are missing")
-	ErrAdvertLatOutOfRange  = errors.New("meshpkt: ADVERT latitude out of range [-90, 90]")
-	ErrAdvertLonOutOfRange  = errors.New("meshpkt: ADVERT longitude out of range [-180, 180]")
+	ErrAdvertTooShort      = errors.New("meshpkt: ADVERT payload too short (need at least 100 bytes)")
+	ErrAdvertBadSignature  = errors.New("meshpkt: ADVERT signature verification failed")
+	ErrAdvertMissingGPS    = errors.New("meshpkt: ADVERT flags declare GPS but bytes are missing")
+	ErrAdvertMissingFeat1  = errors.New("meshpkt: ADVERT flags declare feature1 but bytes are missing")
+	ErrAdvertMissingFeat2  = errors.New("meshpkt: ADVERT flags declare feature2 but bytes are missing")
+	ErrAdvertLatOutOfRange = errors.New("meshpkt: ADVERT latitude out of range [-90, 90]")
+	ErrAdvertLonOutOfRange = errors.New("meshpkt: ADVERT longitude out of range [-180, 180]")
 )
 
 // AdvertNodeType constants for Advert.NodeType.
