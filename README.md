@@ -1,8 +1,13 @@
 # meshpkt
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/meshcore-cz/meshpkt.svg)](https://pkg.go.dev/github.com/meshcore-cz/meshpkt)
+[![npm](https://img.shields.io/npm/v/@meshcore-cz/meshpkt)](https://www.npmjs.com/package/@meshcore-cz/meshpkt)
+
 Pure Go codec for the MeshCore radio packet wire format. WASM-safe — depends only on the Go standard library.
 
-For the full MeshCore client SDK, device transports, and CLI, see [meshcore-go](https://github.com/meshcore-cz/meshcore-go).
+- **Go package:** [pkg.go.dev/github.com/meshcore-cz/meshpkt](https://pkg.go.dev/github.com/meshcore-cz/meshpkt)
+- **npm package:** [@meshcore-cz/meshpkt](https://www.npmjs.com/package/@meshcore-cz/meshpkt) — TypeScript/WASM build for browsers
+- **Full SDK:** [meshcore-go](https://github.com/meshcore-cz/meshcore-go) — client SDK, device transports, CLI
 
 Key source: [MeshCore packet format](https://github.com/meshcore-dev/MeshCore/blob/main/docs/packet_format.md).
 
