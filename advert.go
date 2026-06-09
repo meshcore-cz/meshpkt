@@ -1,6 +1,7 @@
 package meshpkt
 
 import (
+	"crypto/ed25519"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -91,9 +92,87 @@ func EncodeAdvertPayload(adv Advert) ([]byte, error) {
 	return buf, nil
 }
 
-// DecodeAdvertPayload decodes an ADVERT payload. Returns an error only if the
-// payload is shorter than the required 100-byte fixed prefix; optional appdata
-// fields are parsed on a best-effort basis.
+// advertSignedMessage returns the bytes covered by the ADVERT Ed25519 signature:
+// public_key (32) || timestamp (4) || app_data (everything after offset 100).
+// This matches the firmware's signing order in Mesh.cpp.
+func advertSignedMessage(payload []byte) []byte {
+	appData := payload[100:]
+	msg := make([]byte, 36+len(appData))
+	copy(msg[:36], payload[:36])
+	copy(msg[36:], appData)
+	return msg
+}
+
+// allZero reports whether every byte in b is 0x00.
+func allZero(b []byte) bool {
+	for _, v := range b {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// VerifyAdvertSignature reports whether the ADVERT payload carries a valid
+// Ed25519 signature over public_key || timestamp || app_data.
+//
+// Returns true for all-zero signatures — those are unsigned/synthetic packets
+// (e.g. from the codec tool). Returns false for a payload shorter than 100
+// bytes or for a non-zero signature that does not verify.
+func VerifyAdvertSignature(payload []byte) bool {
+	if len(payload) < 100 {
+		return false
+	}
+	if allZero(payload[36:100]) {
+		return true // unsigned packet — nothing to verify
+	}
+	return ed25519.Verify(
+		ed25519.PublicKey(payload[0:32]),
+		advertSignedMessage(payload),
+		payload[36:100],
+	)
+}
+
+// SignAdvertPayload signs an ADVERT payload and returns a new payload with the
+// signature field (bytes 36–99) filled in.
+//
+// privKey must be the Ed25519 private key whose public key is embedded at
+// bytes 0–31 of the payload. Accepts either a 32-byte seed or a 64-byte
+// private key (seed ‖ public key). Returns an error if the key does not
+// correspond to the public key in the payload.
+func SignAdvertPayload(payload, privKey []byte) ([]byte, error) {
+	if len(payload) < 100 {
+		return nil, fmt.Errorf("meshpkt: ADVERT payload too short to sign (%d bytes)", len(payload))
+	}
+
+	var key ed25519.PrivateKey
+	switch len(privKey) {
+	case ed25519.SeedSize: // 32 bytes
+		key = ed25519.NewKeyFromSeed(privKey)
+	case ed25519.PrivateKeySize: // 64 bytes
+		key = ed25519.PrivateKey(privKey)
+	default:
+		return nil, fmt.Errorf("meshpkt: Ed25519 private key must be 32 (seed) or 64 bytes, got %d", len(privKey))
+	}
+
+	pub := key.Public().(ed25519.PublicKey)
+	if string(pub) != string(payload[0:32]) {
+		return nil, fmt.Errorf("meshpkt: private key does not match the public key in ADVERT payload")
+	}
+
+	sig := ed25519.Sign(key, advertSignedMessage(payload))
+
+	out := make([]byte, len(payload))
+	copy(out, payload)
+	copy(out[36:100], sig)
+	return out, nil
+}
+
+// DecodeAdvertPayload decodes an ADVERT payload and verifies its Ed25519
+// signature. Returns an error if the payload is too short or if a non-zero
+// signature fails verification (all-zero signatures are accepted as unsigned).
+//
+// Optional appdata fields are parsed on a best-effort basis.
 func DecodeAdvertPayload(payload []byte) (Advert, error) {
 	// Fixed prefix: pubkey(32) + ts(4) + sig(64) = 100 bytes minimum.
 	if len(payload) < 100 {
@@ -107,6 +186,13 @@ func DecodeAdvertPayload(payload []byte) (Advert, error) {
 	copy(a.PublicKey, payload[0:32])
 	a.Timestamp = time.Unix(int64(binary.LittleEndian.Uint32(payload[32:36])), 0)
 	copy(a.Signature, payload[36:100])
+
+	// Verify signature. All-zero signatures are accepted (unsigned/synthetic packets).
+	if !allZero(a.Signature) {
+		if !ed25519.Verify(ed25519.PublicKey(a.PublicKey), advertSignedMessage(payload), a.Signature) {
+			return Advert{}, fmt.Errorf("meshpkt: ADVERT signature verification failed")
+		}
+	}
 
 	if len(payload) <= 100 {
 		return a, nil

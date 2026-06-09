@@ -2,6 +2,7 @@ package meshpkt
 
 import (
 	"crypto/ecdh"
+	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -25,6 +26,44 @@ func Generate() (KeyPair, error) {
 	return KeyPair{
 		PublicKey:  hex.EncodeToString(priv.PublicKey().Bytes()),
 		PrivateKey: hex.EncodeToString(priv.Bytes()),
+	}, nil
+}
+
+// Identity is an Ed25519 node identity keypair used for signing ADVERT payloads.
+// Real MeshCore devices use Ed25519 keys as their primary identity; this is
+// the correct key type for creating signed node advertisements.
+//
+// Store Seed (32 bytes) to persist and restore the identity.
+type Identity struct {
+	PublicKey  []byte // 32-byte Ed25519 public key — embed in Advert.PublicKey
+	PrivateKey []byte // 64-byte Ed25519 private key (seed ‖ pubkey) — pass to SignAdvertPayload
+	Seed       []byte // 32-byte seed — canonical form for storage
+}
+
+// GenerateIdentity creates a fresh Ed25519 node identity suitable for MeshCore
+// node advertisements.
+func GenerateIdentity() (Identity, error) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return Identity{}, fmt.Errorf("meshpkt: generate identity: %w", err)
+	}
+	return Identity{
+		PublicKey:  []byte(pub),
+		PrivateKey: []byte(priv),
+		Seed:       priv.Seed(),
+	}, nil
+}
+
+// IdentityFromSeed restores an Ed25519 identity from its 32-byte seed.
+func IdentityFromSeed(seed []byte) (Identity, error) {
+	if len(seed) != ed25519.SeedSize {
+		return Identity{}, fmt.Errorf("meshpkt: Ed25519 seed must be %d bytes, got %d", ed25519.SeedSize, len(seed))
+	}
+	priv := ed25519.NewKeyFromSeed(seed)
+	return Identity{
+		PublicKey:  []byte(priv.Public().(ed25519.PublicKey)),
+		PrivateKey: []byte(priv),
+		Seed:       seed,
 	}, nil
 }
 
