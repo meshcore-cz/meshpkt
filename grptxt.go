@@ -31,8 +31,8 @@ func GroupTextPacket(secret []byte, senderName, text string, ts time.Time, opts 
 	for _, opt := range opts {
 		opt(o)
 	}
-	if o.pathHashSize < 1 || o.pathHashSize > 4 {
-		return nil, fmt.Errorf("meshpkt: unsupported path hash size %d (use 1–4)", o.pathHashSize)
+	if o.pathHashSize < 1 || o.pathHashSize > 3 {
+		return nil, fmt.Errorf("meshpkt: unsupported path hash size %d (use 1–3)", o.pathHashSize)
 	}
 	if len(secret) < cipherKeySize {
 		return nil, fmt.Errorf("meshpkt: channel secret too short (%d bytes, need %d)", len(secret), cipherKeySize)

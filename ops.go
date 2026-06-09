@@ -111,7 +111,7 @@ var allPayloadTypeChoices = func() []Choice {
 	return cs
 }()
 
-var hashSizeChoices = []Choice{{1, "1"}, {2, "2"}, {3, "3"}, {4, "4"}}
+var hashSizeChoices = []Choice{{1, "1"}, {2, "2"}, {3, "3"}}
 
 // Ops is the registry of all meshpkt operations exposed to binding layers.
 var Ops = []Op{

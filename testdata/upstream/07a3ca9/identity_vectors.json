@@ -1,0 +1,11 @@
+{
+  "meshcore_upstream_sha": "07a3ca9",
+  "note": "Ed25519 identity ECDH vectors verified by Go implementation. alice.SharedSecret(bob.PublicKey) == bob.SharedSecret(alice.PublicKey). Derivation: scalar=SHA-512(seed)[0:32] with bit clamping (RFC 7748), peer public key converted Edwards→Montgomery via BytesMontgomery(). Firmware interop (C++ oracle) tracked in Milestone 7.",
+  "alice_seed":    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "alice_private": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaae734ea6c2b6257de72355e472aa05a4c487e6b463c029ed306df2f01b5636b58",
+  "alice_public":  "e734ea6c2b6257de72355e472aa05a4c487e6b463c029ed306df2f01b5636b58",
+  "bob_seed":      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "bob_private":   "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7d59c5623dd40a74aa4d5a32ac645d3b3f95daeae4c22be25476dd6a486f7382",
+  "bob_public":    "7d59c5623dd40a74aa4d5a32ac645d3b3f95daeae4c22be25476dd6a486f7382",
+  "shared_secret": "dc10065ba65914f0acc1a52964511ac3a72b659449140e3a82d0574f62dc423d"
+}

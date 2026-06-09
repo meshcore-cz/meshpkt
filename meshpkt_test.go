@@ -35,7 +35,7 @@ func TestEncodeDecodePacket_WithPath(t *testing.T) {
 	want := Packet{
 		Route:        RouteFlood,
 		Type:         PayloadTxtMsg,
-		Version:      1,
+		Version:      0,
 		PathHashSize: 2,
 		Path:         []byte{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF},
 		Payload:      []byte{0x42},
@@ -62,10 +62,11 @@ func TestEncodeDecodePacket_WithPath(t *testing.T) {
 }
 
 func TestEncodeDecodePacket_TransportCodes(t *testing.T) {
+	// Transport codes with version 0 (strict).
 	want := Packet{
 		Route:          RouteTransportFlood,
 		Type:           PayloadAdvert,
-		Version:        2,
+		Version:        0,
 		TransportCodes: [2]uint16{0x1234, 0x5678},
 		PathHashSize:   1,
 		Payload:        []byte{0xFF},
@@ -88,9 +89,193 @@ func TestEncodeDecodePacket_TransportCodes(t *testing.T) {
 	}
 }
 
+
 func TestDecodePacket_TooShort(t *testing.T) {
 	if _, err := DecodePacket([]byte{0x15}); err == nil {
 		t.Fatal("expected error for 1-byte input")
+	}
+}
+
+// ── M1 strict frame validation ───────────────────────────────────────────────
+
+func TestDecodeRejectsReservedPathMode(t *testing.T) {
+	// Manually craft a packet with path mode 0b11 (PathHashSize encoded as reserved).
+	// Header: version=0, type=ADVERT(4), route=FLOOD(1) → (4<<2)|1 = 0x11
+	// path_len byte: top 2 bits = 0b11 (reserved), hop count = 0.
+	raw := []byte{
+		(byte(PayloadAdvert) << 2) | byte(RouteFlood), // header: 0x11
+		0xC0, // path_len: 0b11000000 = mode 3 (reserved), 0 hops
+	}
+	if _, err := DecodePacket(raw); err == nil {
+		t.Fatal("expected ErrInvalidPathHashSize for reserved path mode 0b11")
+	}
+}
+
+func TestEncodeRejectsFourBytePathHashes(t *testing.T) {
+	p := Packet{
+		Route:        RouteFlood,
+		Type:         PayloadAdvert,
+		PathHashSize: 4, // reserved
+		Payload:      []byte{0x01},
+	}
+	if _, err := EncodePacket(p); err == nil {
+		t.Fatal("expected error for PathHashSize=4")
+	}
+}
+
+func TestEncodeRejectsUnalignedPath(t *testing.T) {
+	p := Packet{
+		Route:        RouteFlood,
+		Type:         PayloadAdvert,
+		PathHashSize: 2,
+		Path:         []byte{0xAA, 0xBB, 0xCC}, // 3 bytes, not aligned to 2
+		Payload:      []byte{0x01},
+	}
+	if _, err := EncodePacket(p); err == nil {
+		t.Fatal("expected ErrUnalignedPath")
+	}
+}
+
+func TestEncodeRejectsPathOver64Bytes(t *testing.T) {
+	p := Packet{
+		Route:        RouteFlood,
+		Type:         PayloadAdvert,
+		PathHashSize: 2,
+		Path:         make([]byte, 66), // 33 hops × 2 = 66 > 64
+		Payload:      []byte{0x01},
+	}
+	if _, err := EncodePacket(p); err == nil {
+		t.Fatal("expected ErrPathTooLong")
+	}
+}
+
+func TestEncodeRejectsPayloadOver184Bytes(t *testing.T) {
+	p := Packet{
+		Route:        RouteFlood,
+		Type:         PayloadAdvert,
+		PathHashSize: 2,
+		Payload:      make([]byte, 185),
+	}
+	if _, err := EncodePacket(p); err == nil {
+		t.Fatal("expected ErrPayloadTooLong")
+	}
+}
+
+func TestEncodeRejectsUnsupportedVersion(t *testing.T) {
+	p := Packet{
+		Route:        RouteFlood,
+		Type:         PayloadAdvert,
+		Version:      1,
+		PathHashSize: 2,
+		Payload:      []byte{0x01},
+	}
+	if _, err := EncodePacket(p); err == nil {
+		t.Fatal("expected ErrUnsupportedVersion for version=1")
+	}
+}
+
+func TestDecodeRejectsTruncatedTransportCodes(t *testing.T) {
+	// Transport route but only 2 bytes for transport codes (need 4).
+	raw := []byte{
+		byte(RouteTransportFlood), // header: route=TRANSPORT_FLOOD
+		0x12, 0x34,                // partial transport codes (need 4 bytes)
+	}
+	if _, err := DecodePacket(raw); err == nil {
+		t.Fatal("expected error for truncated transport codes")
+	}
+}
+
+func TestDecodeRejectsTruncatedPath(t *testing.T) {
+	// path_len says 3 hops × 2 bytes = 6 bytes, but payload has only 2.
+	raw := []byte{
+		byte(PayloadAdvert) << 2, // header
+		byte(0x01<<6) | 3,        // path_len: hash_size=2(01), hops=3
+		0xAA, 0xBB,               // only 2 bytes, need 6
+	}
+	if _, err := DecodePacket(raw); err == nil {
+		t.Fatal("expected error for truncated path")
+	}
+}
+
+func TestRoundTripAllRouteModes(t *testing.T) {
+	for _, route := range AllRouteTypes {
+		p := Packet{
+			Route:        route,
+			Type:         PayloadAdvert,
+			Version:      0,
+			PathHashSize: 2,
+			Payload:      []byte{0x42},
+		}
+		if route.IsTransport() {
+			p.TransportCodes = [2]uint16{0x1111, 0x2222}
+		}
+		raw, err := EncodePacket(p)
+		if err != nil {
+			t.Fatalf("route=%s: encode: %v", route, err)
+		}
+		got, err := DecodePacket(raw)
+		if err != nil {
+			t.Fatalf("route=%s: decode: %v", route, err)
+		}
+		if got.Route != route {
+			t.Errorf("route=%s: got %s", route, got.Route)
+		}
+	}
+}
+
+func TestRoundTripPathHashSizesOneTwoThree(t *testing.T) {
+	for _, size := range []int{1, 2, 3} {
+		p := Packet{
+			Route:        RouteFlood,
+			Type:         PayloadAdvert,
+			Version:      0,
+			PathHashSize: size,
+			Path:         make([]byte, size*3), // 3 hops
+			Payload:      []byte{0x42},
+		}
+		raw, err := EncodePacket(p)
+		if err != nil {
+			t.Fatalf("pathHashSize=%d: encode: %v", size, err)
+		}
+		got, err := DecodePacket(raw)
+		if err != nil {
+			t.Fatalf("pathHashSize=%d: decode: %v", size, err)
+		}
+		if got.PathHashSize != size {
+			t.Errorf("pathHashSize=%d: got %d", size, got.PathHashSize)
+		}
+		if got.HopCount() != 3 {
+			t.Errorf("pathHashSize=%d: HopCount = %d, want 3", size, got.HopCount())
+		}
+	}
+}
+
+func TestEncodeRejectsTooManyHops(t *testing.T) {
+	size := 1
+	p := Packet{
+		Route:        RouteFlood,
+		Type:         PayloadAdvert,
+		PathHashSize: size,
+		Path:         make([]byte, 64), // 64 hops × 1 = 64 bytes, but MaxHopCount=63
+		Payload:      []byte{0x01},
+	}
+	if _, err := EncodePacket(p); err == nil {
+		t.Fatal("expected ErrTooManyHops for 64 1-byte hops")
+	}
+}
+
+func TestEncodeMaxValidPath(t *testing.T) {
+	// 32 hops × 2 bytes = 64 bytes ≤ MaxPathBytes, 31 hops × 2 bytes = 62 ≤ 64.
+	size := 2
+	p := Packet{
+		Route:        RouteFlood,
+		Type:         PayloadAdvert,
+		PathHashSize: size,
+		Path:         make([]byte, 62), // 31 hops
+		Payload:      []byte{0x01},
+	}
+	if _, err := EncodePacket(p); err != nil {
+		t.Fatalf("unexpected error for 31-hop 2-byte path: %v", err)
 	}
 }
 
@@ -316,7 +501,7 @@ func TestSignAndVerifyAdvert(t *testing.T) {
 	}
 
 	adv := Advert{
-		PublicKey: id.PublicKey,
+		PublicKey: id.PublicKey[:],
 		NodeType:  AdvertNodeChat,
 		Name:      "TestNode",
 		HasGPS:    true,
@@ -335,7 +520,7 @@ func TestSignAndVerifyAdvert(t *testing.T) {
 	}
 
 	// Sign with 64-byte private key.
-	signed, err := SignAdvertPayload(payload, id.PrivateKey)
+	signed, err := SignAdvertPayload(payload, id.PrivateKey[:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,9 +558,9 @@ func TestSignAdvert_FromSeed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	adv := Advert{PublicKey: id2.PublicKey, Name: "SeedTest"}
+	adv := Advert{PublicKey: id2.PublicKey[:], Name: "SeedTest"}
 	payload, _ := EncodeAdvertPayload(adv)
-	signed, err := SignAdvertPayload(payload, id2.Seed) // 32-byte seed path
+	signed, err := SignAdvertPayload(payload, id2.Seed[:]) // 32-byte seed path
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,10 +573,10 @@ func TestSignAdvert_WrongKey(t *testing.T) {
 	id, _ := GenerateIdentity()
 	other, _ := GenerateIdentity()
 
-	adv := Advert{PublicKey: id.PublicKey, Name: "WrongKey"}
+	adv := Advert{PublicKey: id.PublicKey[:], Name: "WrongKey"}
 	payload, _ := EncodeAdvertPayload(adv)
 
-	_, err := SignAdvertPayload(payload, other.PrivateKey)
+	_, err := SignAdvertPayload(payload, other.PrivateKey[:])
 	if err == nil {
 		t.Fatal("expected error when signing with wrong key")
 	}
@@ -400,9 +585,9 @@ func TestSignAdvert_WrongKey(t *testing.T) {
 func TestDecodeAdvert_BadSignature(t *testing.T) {
 	id, _ := GenerateIdentity()
 
-	adv := Advert{PublicKey: id.PublicKey, Name: "BadSig"}
+	adv := Advert{PublicKey: id.PublicKey[:], Name: "BadSig"}
 	payload, _ := EncodeAdvertPayload(adv)
-	signed, _ := SignAdvertPayload(payload, id.PrivateKey)
+	signed, _ := SignAdvertPayload(payload, id.PrivateKey[:])
 
 	// Tamper with the name in appdata (byte 101 is the flags, 102+ is the name).
 	tampered := make([]byte, len(signed))
@@ -425,6 +610,192 @@ func TestVerifyAdvertSignature_Unsigned(t *testing.T) {
 func TestVerifyAdvertSignature_TooShort(t *testing.T) {
 	if VerifyAdvertSignature(make([]byte, 50)) {
 		t.Error("too-short payload should return false from VerifyAdvertSignature")
+	}
+}
+
+// ── ADVERT SignAdvert / VerifyAdvert ──────────────────────────────────────────
+
+func TestSignAdvert_AndVerifyAdvert(t *testing.T) {
+	id, err := GenerateIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adv := Advert{
+		PublicKey: id.PublicKey[:],
+		NodeType:  AdvertNodeRepeater,
+		Name:      "TestRepeater",
+		HasGPS:    true,
+		Lat:       50.08,
+		Lon:       14.42,
+	}
+
+	signed, err := SignAdvert(id, adv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(signed.Signature) != 64 || allZero(signed.Signature) {
+		t.Error("Signature should be 64 non-zero bytes after SignAdvert")
+	}
+	if err := VerifyAdvert(signed); err != nil {
+		t.Errorf("VerifyAdvert returned error: %v", err)
+	}
+}
+
+func TestSignAdvert_WrongIdentity(t *testing.T) {
+	id1, _ := GenerateIdentity()
+	id2, _ := GenerateIdentity()
+	adv := Advert{PublicKey: id1.PublicKey[:], Name: "test"}
+	if _, err := SignAdvert(id2, adv); err == nil {
+		t.Fatal("expected error when signing with wrong identity")
+	}
+}
+
+// ── ADVERT strict decoder ─────────────────────────────────────────────────────
+
+func TestDecodeAdvertPayloadStrict_MissingGPS(t *testing.T) {
+	// Flags claim GPS (0x10) but no GPS bytes follow.
+	payload := make([]byte, 101)
+	payload[100] = 0x10 // has_gps flag, but no GPS bytes
+	if _, err := DecodeAdvertPayloadStrict(payload); err == nil {
+		t.Fatal("expected error for missing GPS bytes in strict mode")
+	}
+}
+
+func TestDecodeAdvertPayloadStrict_BadLatitude(t *testing.T) {
+	payload := make([]byte, 109) // 100 + flags(1) + lat(4) + lon(4)
+	payload[100] = 0x10          // has_gps
+	// lat = 95_000_000 × 1e-6 = 95.0° — out of range
+	binary.LittleEndian.PutUint32(payload[101:], uint32(int32(95_000_000)))
+	binary.LittleEndian.PutUint32(payload[105:], 0)
+	if _, err := DecodeAdvertPayloadStrict(payload); err == nil {
+		t.Fatal("expected error for latitude 95° in strict mode")
+	}
+}
+
+func TestDecodeAdvertPayloadStrict_ValidRoundTrip(t *testing.T) {
+	id, _ := GenerateIdentity()
+	adv := Advert{
+		PublicKey: id.PublicKey[:],
+		NodeType:  AdvertNodeChat,
+		Name:      "StrictTest",
+		HasGPS:    true,
+		Lat:       48.8566,
+		Lon:       2.3522,
+	}
+	payload, _ := EncodeAdvertPayload(adv)
+	got, err := DecodeAdvertPayloadStrict(payload)
+	if err != nil {
+		t.Fatalf("strict decode failed: %v", err)
+	}
+	if got.Name != "StrictTest" {
+		t.Errorf("Name = %q, want StrictTest", got.Name)
+	}
+	if !got.HasGPS {
+		t.Error("HasGPS should be true")
+	}
+}
+
+// ── ADVERT Feature1/Feature2 ──────────────────────────────────────────────────
+
+func TestAdvertFeatureFields_RoundTrip(t *testing.T) {
+	id, _ := GenerateIdentity()
+	adv := Advert{
+		PublicKey: id.PublicKey[:],
+		NodeType:  AdvertNodeSensor,
+		HasFeat1:  true,
+		Feature1:  0xABCD,
+		HasFeat2:  true,
+		Feature2:  0x1234,
+		Name:      "SensorNode",
+	}
+	payload, err := EncodeAdvertPayload(adv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := DecodeAdvertPayload(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.HasFeat1 || got.Feature1 != 0xABCD {
+		t.Errorf("Feature1 = %04x, want ABCD", got.Feature1)
+	}
+	if !got.HasFeat2 || got.Feature2 != 0x1234 {
+		t.Errorf("Feature2 = %04x, want 1234", got.Feature2)
+	}
+}
+
+// ── Identity ECDH ─────────────────────────────────────────────────────────────
+
+func TestIdentity_SharedSecret_Symmetric(t *testing.T) {
+	alice, err := GenerateIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := GenerateIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ss1, err := alice.SharedSecret(bob.PublicKey)
+	if err != nil {
+		t.Fatalf("alice.SharedSecret: %v", err)
+	}
+	ss2, err := bob.SharedSecret(alice.PublicKey)
+	if err != nil {
+		t.Fatalf("bob.SharedSecret: %v", err)
+	}
+	if ss1 != ss2 {
+		t.Errorf("shared secrets differ:\nalice→bob: %x\nbob→alice: %x", ss1, ss2)
+	}
+	// Shared secret should not be all zeros.
+	var zero [32]byte
+	if ss1 == zero {
+		t.Error("shared secret is all zeros")
+	}
+}
+
+func TestIdentity_SharedSecret_Deterministic(t *testing.T) {
+	alice, _ := GenerateIdentity()
+	bob, _ := GenerateIdentity()
+
+	ss1, err := alice.SharedSecret(bob.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ss2, err := alice.SharedSecret(bob.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ss1 != ss2 {
+		t.Error("SharedSecret is not deterministic")
+	}
+}
+
+func TestIdentity_Sign_Verify(t *testing.T) {
+	id, _ := GenerateIdentity()
+	msg := []byte("hello meshcore")
+	sig := id.Sign(msg)
+
+	if !Verify(id.PublicKey, msg, sig) {
+		t.Error("Verify returned false for valid signature")
+	}
+	// Tamper with message.
+	if Verify(id.PublicKey, []byte("hello meshcorE"), sig) {
+		t.Error("Verify should return false for tampered message")
+	}
+}
+
+func TestIdentityFromSeed_RoundTrip(t *testing.T) {
+	id1, _ := GenerateIdentity()
+	id2, err := IdentityFromSeed(id1.Seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id1.PublicKey != id2.PublicKey {
+		t.Error("PublicKey differs after restore from seed")
+	}
+	if id1.PrivateKey != id2.PrivateKey {
+		t.Error("PrivateKey differs after restore from seed")
 	}
 }
 
