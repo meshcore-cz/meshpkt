@@ -963,7 +963,7 @@ var Ops = []Op{
 		Label:      "Decode TRACE packet",
 		PacketType: "TRACE",
 		Params: []Param{
-			{Name: "packet", Kind: ParamHex, AutoFill: "packetHex", Label: "Full packet hex (SNR bytes are in the path field)"},
+			{Name: "packet", Kind: ParamHex, Label: "Full packet hex (SNR bytes are in the path field)"},
 		},
 		Result: []ResultField{
 			{Name: "tag", Kind: ResultNumber, Label: "Tag"},
