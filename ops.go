@@ -725,11 +725,11 @@ var Ops = []Op{
 	},
 
 	{
-		Name:         "decodeResponse",
-		Category:     "decode",
-		Label:        "Decrypt RESPONSE",
-		PacketType:   "RESPONSE",
-		TabGroupDoc:  "The encrypted reply to a REQ packet, addressed back to the requester and secured with the same X25519 ECDH shared secret.",
+		Name:        "decodeResponse",
+		Category:    "decode",
+		Label:       "Decrypt RESPONSE",
+		PacketType:  "RESPONSE",
+		TabGroupDoc: "The encrypted reply to a REQ packet, addressed back to the requester and secured with the same X25519 ECDH shared secret.",
 		Params: []Param{
 			{Name: "payload", Kind: ParamHex, AutoFill: "payloadHex"},
 			{Name: "privKey", Kind: ParamString, Label: "My private key", Placeholder: "64 hex chars", Action: "keypair", Secret: true},
