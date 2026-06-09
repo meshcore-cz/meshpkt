@@ -86,6 +86,7 @@ type Op struct {
 	TabGroup      string // groups ops into one UI tab; ops in same group show a variant toggle
 	TabGroupLabel string // tab button title, e.g. "GRP_TXT"
 	TabGroupSub   string // tab button subtitle, e.g. "channel message"
+	TabGroupDoc   string // prose description of the packet type shown in UI help text
 	TabLabel      string // variant selector label within a TabGroup, e.g. "By name"
 	PacketType    string // for decode ops: the PayloadType.String() this op decodes, e.g. "GRP_TXT"
 
@@ -124,6 +125,7 @@ var Ops = []Op{
 		TabGroup:      "grptxt",
 		TabGroupLabel: "GRP_TXT",
 		TabGroupSub:   "channel message",
+		TabGroupDoc:   "A text message broadcast to everyone sharing a channel. Encrypted with AES-128-ECB plus a 2-byte HMAC-SHA256 tag, using a 16-byte key derived from the channel name — or supplied directly as a raw channel secret.",
 		TabLabel:      "By name",
 		Params: []Param{
 			{Name: "channelName", Kind: ParamString, Label: "Channel name", Placeholder: "#test"},
@@ -175,6 +177,7 @@ var Ops = []Op{
 		TabGroup:      "grpdata",
 		TabGroupLabel: "GRP_DATA",
 		TabGroupSub:   "group datagram",
+		TabGroupDoc:   "Arbitrary binary data broadcast on a channel, secured with the same channel encryption as GRP_TXT. Used for non-text payloads such as telemetry or app-specific data, tagged with a data-type byte.",
 		TabLabel:      "By name",
 		Params: []Param{
 			{Name: "channelName", Kind: ParamString, Label: "Channel name", Placeholder: "#test"},
@@ -227,6 +230,7 @@ var Ops = []Op{
 		TabGroup:      "txtmsg",
 		TabGroupLabel: "TXT_MSG",
 		TabGroupSub:   "direct message",
+		TabGroupDoc:   "A private text message addressed to a single peer. Encrypted end-to-end with a shared secret derived from your private key and the peer's public key via X25519 ECDH.",
 		Params: []Param{
 			{Name: "privKey", Kind: ParamString, Label: "My private key", Placeholder: "64 hex chars", Action: "keypair", Secret: true},
 			{Name: "peerPubKey", Kind: ParamString, Label: "Peer public key", Placeholder: "64 hex chars"},
@@ -249,6 +253,7 @@ var Ops = []Op{
 		TabGroup:      "advert",
 		TabGroupLabel: "ADVERT",
 		TabGroupSub:   "node advertisement",
+		TabGroupDoc:   "A self-announcement broadcast so other nodes can discover this one. Carries the node's public key, name, type, and optional GPS position. The contents are public and not encrypted.",
 		Params: []Param{
 			{Name: "pubKey", Kind: ParamHex, Label: "Public key (32 bytes)", Placeholder: "64 hex chars", Action: "keypair-pub"},
 			{Name: "signature", Kind: ParamHex, Label: "Signature (optional, 64 bytes)", Placeholder: "leave empty for zeros", Optional: true},
@@ -295,6 +300,7 @@ var Ops = []Op{
 		TabGroup:      "ack",
 		TabGroupLabel: "ACK",
 		TabGroupSub:   "acknowledgement",
+		TabGroupDoc:   "A minimal packet confirming receipt of an earlier message. Carries only a CRC32 that identifies the packet being acknowledged.",
 		Params: []Param{
 			{Name: "crc", Kind: ParamInt, Label: "CRC32 value", Placeholder: "0"},
 		},
@@ -316,6 +322,7 @@ var Ops = []Op{
 		TabGroup:      "req",
 		TabGroupLabel: "REQ",
 		TabGroupSub:   "request",
+		TabGroupDoc:   "An encrypted request sent to a known peer (e.g. login, get stats, keepalive). Uses X25519 ECDH shared-secret encryption with a request-type byte selecting the operation.",
 		Params: []Param{
 			{Name: "privKey", Kind: ParamString, Label: "My private key", Placeholder: "64 hex chars", Action: "keypair", Secret: true},
 			{Name: "peerPubKey", Kind: ParamString, Label: "Peer public key", Placeholder: "64 hex chars"},
@@ -340,6 +347,7 @@ var Ops = []Op{
 		TabGroup:      "anonreq",
 		TabGroupLabel: "ANON_REQ",
 		TabGroupSub:   "anonymous request",
+		TabGroupDoc:   "A first-contact request from a sender the recipient doesn't yet know. The sender's ephemeral public key is embedded so the recipient can derive the shared ECDH secret — used when initially connecting to a repeater or room server.",
 		Params: []Param{
 			{Name: "destPubKey", Kind: ParamHex, Label: "Destination public key (32 bytes)", Placeholder: "64 hex chars"},
 			{Name: "myPrivKey", Kind: ParamString, Label: "My private key", Placeholder: "64 hex chars", Action: "keypair", Secret: true},
@@ -363,6 +371,7 @@ var Ops = []Op{
 		TabGroup:      "control",
 		TabGroupLabel: "CONTROL",
 		TabGroupSub:   "control data",
+		TabGroupDoc:   "Protocol control packets such as discovery requests and responses. They carry a sub-type and flags rather than user content, and are used for node discovery and network management.",
 		Params: []Param{
 			{Name: "typeFilter", Kind: ParamInt, Label: "Node type filter", Choices: []Choice{{0, "All nodes"}, {1, "Chat"}, {2, "Repeater"}, {4, "Room"}, {8, "Sensor"}}},
 			{Name: "tag", Kind: ParamInt, Label: "Random tag", Placeholder: "0"},
@@ -387,6 +396,7 @@ var Ops = []Op{
 		TabGroup:      "raw",
 		TabGroupLabel: "RAW",
 		TabGroupSub:   "any type",
+		TabGroupDoc:   "Build a packet from raw header fields (route, payload type, version, path-hash size) and an arbitrary payload hex blob — bypassing the typed encoders. Useful for manual construction and experimentation.",
 		Params: []Param{
 			{Name: "route", Kind: ParamInt, Label: "Route type", Choices: allRouteChoices, Group: "hdr"},
 			{Name: "payloadType", Kind: ParamInt, Label: "Payload type", Choices: allPayloadTypeChoices, Group: "hdr"},
@@ -715,10 +725,11 @@ var Ops = []Op{
 	},
 
 	{
-		Name:       "decodeResponse",
-		Category:   "decode",
-		Label:      "Decrypt RESPONSE",
-		PacketType: "RESPONSE",
+		Name:         "decodeResponse",
+		Category:     "decode",
+		Label:        "Decrypt RESPONSE",
+		PacketType:   "RESPONSE",
+		TabGroupDoc:  "The encrypted reply to a REQ packet, addressed back to the requester and secured with the same X25519 ECDH shared secret.",
 		Params: []Param{
 			{Name: "payload", Kind: ParamHex, AutoFill: "payloadHex"},
 			{Name: "privKey", Kind: ParamString, Label: "My private key", Placeholder: "64 hex chars", Action: "keypair", Secret: true},
@@ -744,10 +755,11 @@ var Ops = []Op{
 	},
 
 	{
-		Name:       "decodePath",
-		Category:   "decode",
-		Label:      "Decrypt PATH",
-		PacketType: "PATH",
+		Name:        "decodePath",
+		Category:    "decode",
+		Label:       "Decrypt PATH",
+		PacketType:  "PATH",
+		TabGroupDoc: "Carries a discovered route — the ordered list of hop hashes — back toward a peer, optionally with an extra piggy-backed payload. Used to establish return paths through the mesh.",
 		Params: []Param{
 			{Name: "payload", Kind: ParamHex, AutoFill: "payloadHex"},
 			{Name: "privKey", Kind: ParamString, Label: "My private key", Placeholder: "64 hex chars", Action: "keypair", Secret: true},
