@@ -97,15 +97,15 @@ export interface KeypairResult {
 export interface MeshcoreWasm {
   encodeGroupText(channelName: string, sender: string, text: string): HexResult | ErrResult;
   encodeGroupTextSecret(secret: string, sender: string, text: string): HexResult | ErrResult;
-  encodeDirectText(privKey: string, peerPubKey: string, text: string): HexResult | ErrResult;
-  encodeRaw(route: number, payloadType: number, version: number, pathHashSize: number, payload: string): HexResult | ErrResult;
-  encodeAdvert(pubKey: string, signature: string, name: string, hasGPS: number, lat: unknown, lon: unknown): HexResult | ErrResult;
-  encodeAck(crc: number): HexResult | ErrResult;
   encodeGrpData(channelName: string, dataType: number, data: string): HexResult | ErrResult;
   encodeGrpDataSecret(secret: string, dataType: number, data: string): HexResult | ErrResult;
+  encodeDirectText(privKey: string, peerPubKey: string, text: string): HexResult | ErrResult;
+  encodeAdvert(pubKey: string, signature: string, name: string, hasGPS: number, lat: unknown, lon: unknown): HexResult | ErrResult;
+  encodeAck(crc: number): HexResult | ErrResult;
   encodeReq(privKey: string, peerPubKey: string, reqType: number, data: string): HexResult | ErrResult;
   encodeAnonReq(destPubKey: string, myPrivKey: string, data: string): HexResult | ErrResult;
   encodeDiscoverReq(typeFilter: number, tag: number, since: number, prefixOnly: number): HexResult | ErrResult;
+  encodeRaw(route: number, payloadType: number, version: number, pathHashSize: number, payload: string): HexResult | ErrResult;
   decodeEnvelope(packet: string): Envelope | ErrResult;
   decodeGroupText(payload: string, channelName: string): GroupTextPayload | ErrResult;
   decodeGroupTextSecret(payload: string, secret: string): GroupTextPayload | ErrResult;
@@ -127,15 +127,15 @@ export interface MeshcoreWasm {
 export const meshcoreOpNames = [
   "encodeGroupText",
   "encodeGroupTextSecret",
-  "encodeDirectText",
-  "encodeRaw",
-  "encodeAdvert",
-  "encodeAck",
   "encodeGrpData",
   "encodeGrpDataSecret",
+  "encodeDirectText",
+  "encodeAdvert",
+  "encodeAck",
   "encodeReq",
   "encodeAnonReq",
   "encodeDiscoverReq",
+  "encodeRaw",
   "decodeEnvelope",
   "decodeGroupText",
   "decodeGroupTextSecret",

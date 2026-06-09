@@ -98,7 +98,7 @@ function buildAPI(call: MeshpktCall): MeshcoreWasm {
   const api = {} as MeshcoreWasm;
 
   for (const name of meshcoreOpNames) {
-    (api as Record<string, (...args: unknown[]) => object>)[name] = (
+    (api as unknown as Record<string, (...args: unknown[]) => object>)[name] = (
       ...args: unknown[]
     ) => call(name, JSON.stringify(args));
   }
