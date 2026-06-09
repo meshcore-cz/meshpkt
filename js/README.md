@@ -5,6 +5,8 @@
 
 MeshCore radio packet codec for JavaScript and TypeScript, powered by WebAssembly.
 
+> **Early development.** This package is a work in progress. APIs may change before v1.0 — pin to a specific version in production.
+
 - **npm:** [npmjs.com/package/@meshcore-cz/meshpkt](https://www.npmjs.com/package/@meshcore-cz/meshpkt)
 - **Go source & docs:** [pkg.go.dev/github.com/meshcore-cz/meshpkt](https://pkg.go.dev/github.com/meshcore-cz/meshpkt)
 
@@ -113,19 +115,30 @@ console.log(msg.destHash); // first-byte hash of recipient's public key
 
 ### Node advertisements (ADVERT)
 
+The signature is verified automatically. `decodeAdvert` returns `{ error }` if
+the packet carries a non-zero signature that does not verify — tampered data is
+rejected before you ever see the fields.
+
 ```ts
 const env = meshpkt.decodeEnvelope(rawHex);
 if ("error" in env || env.type !== "ADVERT") return;
 
 const adv = meshpkt.decodeAdvert(env.payloadHex);
-if ("error" in adv) throw new Error(adv.error);
+if ("error" in adv) throw new Error(adv.error); // also catches bad signatures
 
-console.log(adv.name);      // "CZ.NIC Repeater"
-console.log(adv.nodeType);  // 2 = repeater
+console.log(adv.name);        // "CZ.NIC Repeater"
+console.log(adv.publicKey);   // 64-char hex — treat this as the stable identity
+console.log(adv.nodeType);    // 2 = repeater
+console.log(adv.sigVerified); // true = Ed25519 signature verified
+                              // false = all-zero signature (unsigned packet)
 if (adv.hasGPS) {
   console.log(adv.lat, adv.lon);
 }
 ```
+
+> **Note:** `sigVerified: true` proves the holder of `publicKey` signed exactly
+> this name and these coordinates. It does not prove the name is unique — use
+> `publicKey` as the stable identity, and treat the name as a signed label.
 
 ---
 

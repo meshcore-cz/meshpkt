@@ -1,6 +1,6 @@
 .PHONY: help fmt fmt-check tidy-check vet test check \
 	js-install js-generate js-generate-check js-wasm js-build js-pack js-check \
-	release npm-publish
+	release npm-publish cli-install
 
 VERSION ?=
 TINYGO ?= tinygo
@@ -10,6 +10,7 @@ help:
 	@echo "Available targets:"
 	@echo "  make fmt                       Format Go source files"
 	@echo "  make check                     Validate Go library"
+	@echo "  make cli-install               Install meshpkt-cli to GOPATH/bin"
 	@echo "  make js-build                  Build npm package and WASM module"
 	@echo "  make js-check                  Build and validate npm package"
 	@echo "  make release VERSION=v0.1.0    Create and push a release tag"
@@ -105,6 +106,9 @@ release: check
 	git tag -a "$(VERSION)" -m "meshpkt $(VERSION)"
 	git push origin main "$(VERSION)"
 	@echo "Released $(VERSION)"
+
+cli-install:
+	go install ./cmd/meshpkt-cli
 
 npm-publish: js-check
 	cd $(JS_DIR) && npm publish --access public

@@ -390,6 +390,52 @@ var Ops = []Op{
 	},
 
 	{
+		Name:          "encodeTrace",
+		Category:      "encode",
+		Label:         "Encode TRACE",
+		TabGroup:      "trace",
+		TabGroupLabel: "TRACE",
+		TabGroupSub:   "path trace",
+		Params: []Param{
+			{Name: "tag", Kind: ParamInt, Label: "Tag (random)", Placeholder: "0"},
+			{Name: "authCode", Kind: ParamInt, Label: "Auth code (opaque)", Placeholder: "0"},
+			{Name: "flags", Kind: ParamInt, Label: "Flags (hash width: 0=1B 1=2B 2=4B 3=8B)", Placeholder: "0"},
+			{Name: "routeHashes", Kind: ParamHex, Label: "Route hashes (hex)", Optional: true, Widget: "textarea"},
+		},
+		Result:         []ResultField{{Name: "hex", Kind: ResultString, Label: "Hex packet"}},
+		ResultTypeName: "HexResult",
+		Run: func(args []any) (map[string]any, error) {
+			pkt, err := TracePacket(uint32(args[0].(int)), uint32(args[1].(int)), byte(args[2].(int)), args[3].([]byte))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"hex": hex.EncodeToString(pkt)}, nil
+		},
+	},
+
+	{
+		Name:          "encodeMultipartAck",
+		Category:      "encode",
+		Label:         "Encode MULTIPART ACK",
+		TabGroup:      "multipart",
+		TabGroupLabel: "MULTIPART",
+		TabGroupSub:   "repeated ACK",
+		Params: []Param{
+			{Name: "remaining", Kind: ParamInt, Label: "Remaining (packets still to send after this)", Placeholder: "0"},
+			{Name: "crc", Kind: ParamInt, Label: "ACK CRC32", Placeholder: "0"},
+		},
+		Result:         []ResultField{{Name: "hex", Kind: ResultString, Label: "Hex packet"}},
+		ResultTypeName: "HexResult",
+		Run: func(args []any) (map[string]any, error) {
+			pkt, err := MultipartAckPacket(byte(args[0].(int)), uint32(args[1].(int)))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"hex": hex.EncodeToString(pkt)}, nil
+		},
+	},
+
+	{
 		Name:          "encodeRaw",
 		Category:      "encode",
 		Label:         "Encode raw packet",
@@ -589,19 +635,22 @@ var Ops = []Op{
 			{Name: "hasGPS", Kind: ResultBool, Label: "Has GPS"},
 			{Name: "lat", Kind: ResultNumber, Optional: true, Label: "Latitude"},
 			{Name: "lon", Kind: ResultNumber, Optional: true, Label: "Longitude"},
+			{Name: "sigVerified", Kind: ResultBool, Label: "Signature verified"},
 		},
 		ResultTypeName: "AdvertPayload",
 		Run: func(args []any) (map[string]any, error) {
-			adv, err := DecodeAdvertPayload(args[0].([]byte))
+			payload := args[0].([]byte)
+			adv, err := DecodeAdvertPayload(payload)
 			if err != nil {
 				return nil, err
 			}
 			result := map[string]any{
-				"publicKey": hex.EncodeToString(adv.PublicKey),
-				"timestamp": adv.Timestamp.Unix(),
-				"name":      adv.Name,
-				"nodeType":  int(adv.NodeType),
-				"hasGPS":    adv.HasGPS,
+				"publicKey":   hex.EncodeToString(adv.PublicKey),
+				"timestamp":   adv.Timestamp.Unix(),
+				"name":        adv.Name,
+				"nodeType":    int(adv.NodeType),
+				"hasGPS":      adv.HasGPS,
+				"sigVerified": !allZero(adv.Signature), // true = non-zero sig that passed verification
 			}
 			if adv.HasGPS {
 				result["lat"] = adv.Lat
@@ -863,6 +912,89 @@ var Ops = []Op{
 				result["discoverNodeType"] = int(c.DiscoverResp.NodeType)
 				result["discoverSNR"] = c.DiscoverResp.SNR
 				result["discoverPubKey"] = c.DiscoverResp.PubKey
+			}
+			return result, nil
+		},
+	},
+
+	{
+		// TRACE is special: SNR bytes live in Packet.Path, not the payload.
+		// This op therefore takes the full packet hex, not just payloadHex.
+		Name:       "decodeTrace",
+		Category:   "decode",
+		Label:      "Decode TRACE packet",
+		PacketType: "TRACE",
+		Params: []Param{
+			{Name: "packet", Kind: ParamHex, Label: "Full packet hex (SNR bytes are in the path field)"},
+		},
+		Result: []ResultField{
+			{Name: "tag", Kind: ResultNumber, Label: "Tag"},
+			{Name: "authCode", Kind: ResultNumber, Label: "Auth code"},
+			{Name: "flags", Kind: ResultNumber, Label: "Flags"},
+			{Name: "hashWidth", Kind: ResultNumber, Label: "Route hash width (bytes)"},
+			{Name: "routeHashes", Kind: ResultStringArray, Label: "Route hashes"},
+			{Name: "snrs", Kind: ResultStringArray, Label: "SNR values (dB)"},
+			{Name: "hopCount", Kind: ResultNumber, Label: "Hops with SNR"},
+		},
+		ResultTypeName: "TracePayload",
+		Run: func(args []any) (map[string]any, error) {
+			pkt, err := DecodePacket(args[0].([]byte))
+			if err != nil {
+				return nil, err
+			}
+			if pkt.Type != PayloadTrace {
+				return nil, fmt.Errorf("expected TRACE packet, got %s", pkt.Type)
+			}
+			t, err := DecodeTracePayload(pkt.Payload)
+			if err != nil {
+				return nil, err
+			}
+			snrs := TraceSNRs(pkt.Path)
+			return map[string]any{
+				"tag":         int(t.Tag),
+				"authCode":    int(t.AuthCode),
+				"flags":       int(t.Flags),
+				"hashWidth":   t.HashWidth(),
+				"routeHashes": traceRouteHashHex(t),
+				"snrs":        traceSNRStrings(snrs),
+				"hopCount":    len(snrs),
+			}, nil
+		},
+	},
+
+	{
+		Name:       "decodeMultipart",
+		Category:   "decode",
+		Label:      "Decode MULTIPART",
+		PacketType: "MULTIPART",
+		Params: []Param{
+			{Name: "payload", Kind: ParamHex, AutoFill: "payloadHex"},
+		},
+		Result: []ResultField{
+			{Name: "remaining", Kind: ResultNumber, Label: "Remaining packets"},
+			{Name: "innerType", Kind: ResultString, Label: "Inner type"},
+			{Name: "innerTypeCode", Kind: ResultNumber, Label: "Inner type code"},
+			{Name: "innerPayloadHex", Kind: ResultString, Label: "Inner payload (hex)"},
+			{Name: "ackCrc", Kind: ResultNumber, Optional: true, Label: "ACK CRC32"},
+			{Name: "ackCrcHex", Kind: ResultString, Optional: true, Label: "ACK CRC32 (hex)"},
+		},
+		ResultTypeName: "MultipartPayload",
+		Run: func(args []any) (map[string]any, error) {
+			m, err := DecodeMultipartPayload(args[0].([]byte))
+			if err != nil {
+				return nil, err
+			}
+			result := map[string]any{
+				"remaining":       int(m.Remaining),
+				"innerType":       m.InnerType.String(),
+				"innerTypeCode":   int(m.InnerType),
+				"innerPayloadHex": hex.EncodeToString(m.InnerPayload),
+			}
+			if m.InnerType == PayloadAck {
+				if crc, err := DecodeAckPayload(m.InnerPayload); err == nil {
+					result["ackCrc"] = int(crc)
+					result["ackCrcHex"] = fmt.Sprintf("%08x", crc)
+				}
 			}
 			return result, nil
 		},

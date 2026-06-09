@@ -43,6 +43,7 @@ export interface AdvertPayload {
   hasGPS: boolean;
   lat?: number;
   lon?: number;
+  sigVerified: boolean;
 }
 export interface AckPayload {
   crc: number;
@@ -1257,6 +1258,7 @@ export const OpMetas: OpMeta[] = [
       { name: "hasGPS", kind: "boolean", optional: false, label: "Has GPS" },
       { name: "lat", kind: "number", optional: true, label: "Latitude" },
       { name: "lon", kind: "number", optional: true, label: "Longitude" },
+      { name: "sigVerified", kind: "boolean", optional: false, label: "Signature verified" },
     ],
   },
   {

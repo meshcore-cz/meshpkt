@@ -3,6 +3,8 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/meshcore-cz/meshpkt.svg)](https://pkg.go.dev/github.com/meshcore-cz/meshpkt)
 [![npm](https://img.shields.io/npm/v/@meshcore-cz/meshpkt)](https://www.npmjs.com/package/@meshcore-cz/meshpkt)
 
+> **Early development.** This library is a work in progress. APIs may change before v1.0 — pin to a specific version in production.
+
 Pure Go codec for the MeshCore radio packet wire format. WASM-safe — depends only on the Go standard library.
 
 - **Go package:** [pkg.go.dev/github.com/meshcore-cz/meshpkt](https://pkg.go.dev/github.com/meshcore-cz/meshpkt)
@@ -64,8 +66,12 @@ plaintext = [timestamp:4 LE][flags:1]["text"]
 **ADVERT** (node advertisement, unencrypted)
 ```
 [pubkey:32][timestamp:4 LE][signature:64][appdata]
-appdata = [flags:1][lat?:4 float32 LE][lon?:4 float32 LE][name string]
+appdata = [flags:1][lat?:4 int32 LE ×1e-6°][lon?:4 int32 LE ×1e-6°][feat1?:2][feat2?:2][name string]
+
+signed  = pubkey || timestamp || appdata   (Ed25519 over these bytes)
 ```
+
+All-zero signatures are accepted as unsigned (e.g. from the codec tool). `DecodeAdvertPayload` returns an error for any non-zero signature that fails verification.
 
 ## Crypto
 
@@ -77,6 +83,8 @@ cipher   = AES-128-ECB, zero-padded to block boundary
 channel secret  = SHA256(channelName)[:16]
 channel hash    = SHA256(secret[:16])[0]    — 1-byte routing hint
 direct secret   = X25519(myPriv, peerPub)[:16]
+
+ADVERT sig      = Ed25519(identityPrivKey, pubkey ‖ timestamp ‖ appdata)
 ```
 
 ## Files
@@ -86,7 +94,7 @@ direct secret   = X25519(myPriv, peerPub)[:16]
 | `doc.go` | Package overview and wire-format reference |
 | `packet.go` | Envelope encode/decode, `RouteType`, `PayloadType`, `Packet`, `Option` |
 | `crypto.go` | AES-128-ECB, HMAC-SHA256, `sealMAC`/`openMAC` (unexported) |
-| `keys.go` | X25519 keypair generation, ECDH (`KeyPair`, `Generate`, `SharedSecret`, …) |
+| `keys.go` | X25519 keypair + Ed25519 identity (`KeyPair`, `Generate`, `Identity`, `GenerateIdentity`, …) |
 | `channel.go` | `DeriveChannelSecret`, `ChannelHash` |
 | `grptxt.go` | GRP_TXT (channel text) encode/decode |
 | `grpdata.go` | GRP_DATA (group datagram) encode/decode |
@@ -124,10 +132,25 @@ pkt, err := meshpkt.DirectTextPacketFromKeys(myPrivHex, peerPubHex, "hello", tim
 // Direct message — decode
 msg, err := meshpkt.DecodeDirectTextPayloadFromKeys(envelope.Payload, myPrivHex, peerPubHex)
 
-// ADVERT — decode
+// ADVERT — decode (signature verified automatically; error on bad sig)
 adv, err := meshpkt.DecodeAdvertPayload(envelope.Payload)
+fmt.Println(adv.Name, adv.NodeType)
 
-// Keypair
+// ADVERT — encode and sign
+id, err := meshpkt.GenerateIdentity()           // or IdentityFromSeed(seed)
+adv := meshpkt.Advert{
+    PublicKey: id.PublicKey,
+    NodeType:  meshpkt.AdvertNodeChat,
+    Name:      "Alice's node",
+}
+payload, err := meshpkt.EncodeAdvertPayload(adv)
+payload, err  = meshpkt.SignAdvertPayload(payload, id.PrivateKey)
+pkt, err      := meshpkt.EncodePacket(meshpkt.Packet{
+    Route: meshpkt.RouteFlood, Type: meshpkt.PayloadAdvert,
+    PathHashSize: 2, Payload: payload,
+})
+
+// X25519 keypair (for direct messages)
 kp, err := meshpkt.Generate()
 shared, err := meshpkt.SharedSecret(myPrivHex, peerPubHex)
 ```
