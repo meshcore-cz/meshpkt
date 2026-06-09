@@ -111,4 +111,3 @@ func DecodeAnonReqPayload(payload []byte, recipient Identity) (AnonReq, error) {
 		Data:         plaintext[4:],
 	}, nil
 }
-
