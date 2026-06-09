@@ -102,7 +102,7 @@ release: check
 	gofmt -w .
 	go mod tidy
 	cd $(JS_DIR) && npm version --no-git-tag-version "$$(echo '$(VERSION)' | sed 's/^v//')"
-	$(MAKE) js-check
+	$(MAKE) js-build
 	git add -u
 	git commit -m "chore: release $(VERSION)"
 	git tag -a "$(VERSION)" -m "meshpkt $(VERSION)"
