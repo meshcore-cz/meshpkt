@@ -90,6 +90,23 @@ export interface ControlPayload {
   discoverSNR?: number;
   discoverPubKey?: string;
 }
+export interface TracePayload {
+  tag: number;
+  authCode: number;
+  flags: number;
+  hashWidth: number;
+  routeHashes: string[];
+  snrs: string[];
+  hopCount: number;
+}
+export interface MultipartPayload {
+  remaining: number;
+  innerType: string;
+  innerTypeCode: number;
+  innerPayloadHex: string;
+  ackCrc?: number;
+  ackCrcHex?: string;
+}
 export interface KeypairResult {
   publicKey: string;
   privateKey: string;
@@ -106,6 +123,8 @@ export interface MeshcoreWasm {
   encodeReq(privKey: string, peerPubKey: string, reqType: number, data: string): HexResult | ErrResult;
   encodeAnonReq(destPubKey: string, myPrivKey: string, data: string): HexResult | ErrResult;
   encodeDiscoverReq(typeFilter: number, tag: number, since: number, prefixOnly: number): HexResult | ErrResult;
+  encodeTrace(tag: number, authCode: number, flags: number, routeHashes: string): HexResult | ErrResult;
+  encodeMultipartAck(remaining: number, crc: number): HexResult | ErrResult;
   encodeRaw(route: number, payloadType: number, version: number, pathHashSize: number, payload: string): HexResult | ErrResult;
   decodeEnvelope(packet: string): Envelope | ErrResult;
   decodeGroupText(payload: string, channelName: string): GroupTextPayload | ErrResult;
@@ -120,6 +139,8 @@ export interface MeshcoreWasm {
   decodePath(payload: string, privKey: string, peerPubKey: string): PathPayload | ErrResult;
   decodeAnonReq(payload: string, myPrivKey: string): AnonReqPayload | ErrResult;
   decodeControl(payload: string): ControlPayload | ErrResult;
+  decodeTrace(packet: string): TracePayload | ErrResult;
+  decodeMultipart(payload: string): MultipartPayload | ErrResult;
   generateKeypair(): KeypairResult | ErrResult;
   deriveChannelSecret(channelName: string): HexResult | ErrResult;
   sharedSecret(privKey: string, peerPubKey: string): HexResult | ErrResult;
@@ -136,6 +157,8 @@ export const meshcoreOpNames = [
   "encodeReq",
   "encodeAnonReq",
   "encodeDiscoverReq",
+  "encodeTrace",
+  "encodeMultipartAck",
   "encodeRaw",
   "decodeEnvelope",
   "decodeGroupText",
@@ -150,6 +173,8 @@ export const meshcoreOpNames = [
   "decodePath",
   "decodeAnonReq",
   "decodeControl",
+  "decodeTrace",
+  "decodeMultipart",
   "generateKeypair",
   "deriveChannelSecret",
   "sharedSecret",
@@ -885,6 +910,130 @@ export const OpMetas: OpMeta[] = [
         group: "",
         action: "",
         widget: "checkbox",
+        autoFill: "",
+        secret: false,
+      },
+    ],
+    result: [
+      { name: "hex", kind: "string", optional: false, label: "Hex packet" },
+    ],
+  },
+  {
+    name: "encodeTrace",
+    category: "encode",
+    label: "Encode TRACE",
+    tabGroup: "trace",
+    tabGroupLabel: "TRACE",
+    tabGroupSub: "path trace",
+    tabGroupDoc: "",
+    tabLabel: "",
+    packetType: "",
+    resultTypeName: "HexResult",
+    params: [
+      {
+        name: "tag",
+        kind: "int",
+        label: "Tag (random)",
+        placeholder: "0",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "",
+        secret: false,
+      },
+      {
+        name: "authCode",
+        kind: "int",
+        label: "Auth code (opaque)",
+        placeholder: "0",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "",
+        secret: false,
+      },
+      {
+        name: "flags",
+        kind: "int",
+        label: "Flags (hash width: 0=1B 1=2B 2=4B 3=8B)",
+        placeholder: "0",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "",
+        secret: false,
+      },
+      {
+        name: "routeHashes",
+        kind: "hex",
+        label: "Route hashes (hex)",
+        placeholder: "",
+        optional: true,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "textarea",
+        autoFill: "",
+        secret: false,
+      },
+    ],
+    result: [
+      { name: "hex", kind: "string", optional: false, label: "Hex packet" },
+    ],
+  },
+  {
+    name: "encodeMultipartAck",
+    category: "encode",
+    label: "Encode MULTIPART ACK",
+    tabGroup: "multipart",
+    tabGroupLabel: "MULTIPART",
+    tabGroupSub: "repeated ACK",
+    tabGroupDoc: "",
+    tabLabel: "",
+    packetType: "",
+    resultTypeName: "HexResult",
+    params: [
+      {
+        name: "remaining",
+        kind: "int",
+        label: "Remaining (packets still to send after this)",
+        placeholder: "0",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "",
+        secret: false,
+      },
+      {
+        name: "crc",
+        kind: "int",
+        label: "ACK CRC32",
+        placeholder: "0",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
         autoFill: "",
         secret: false,
       },
@@ -1676,6 +1825,81 @@ export const OpMetas: OpMeta[] = [
       { name: "discoverNodeType", kind: "number", optional: true, label: "Node type" },
       { name: "discoverSNR", kind: "number", optional: true, label: "SNR (dB)" },
       { name: "discoverPubKey", kind: "string", optional: true, label: "Public key" },
+    ],
+  },
+  {
+    name: "decodeTrace",
+    category: "decode",
+    label: "Decode TRACE packet",
+    tabGroup: "",
+    tabGroupLabel: "",
+    tabGroupSub: "",
+    tabGroupDoc: "",
+    tabLabel: "",
+    packetType: "TRACE",
+    resultTypeName: "TracePayload",
+    params: [
+      {
+        name: "packet",
+        kind: "hex",
+        label: "Full packet hex (SNR bytes are in the path field)",
+        placeholder: "",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "",
+        secret: false,
+      },
+    ],
+    result: [
+      { name: "tag", kind: "number", optional: false, label: "Tag" },
+      { name: "authCode", kind: "number", optional: false, label: "Auth code" },
+      { name: "flags", kind: "number", optional: false, label: "Flags" },
+      { name: "hashWidth", kind: "number", optional: false, label: "Route hash width (bytes)" },
+      { name: "routeHashes", kind: "string[]", optional: false, label: "Route hashes" },
+      { name: "snrs", kind: "string[]", optional: false, label: "SNR values (dB)" },
+      { name: "hopCount", kind: "number", optional: false, label: "Hops with SNR" },
+    ],
+  },
+  {
+    name: "decodeMultipart",
+    category: "decode",
+    label: "Decode MULTIPART",
+    tabGroup: "",
+    tabGroupLabel: "",
+    tabGroupSub: "",
+    tabGroupDoc: "",
+    tabLabel: "",
+    packetType: "MULTIPART",
+    resultTypeName: "MultipartPayload",
+    params: [
+      {
+        name: "payload",
+        kind: "hex",
+        label: "",
+        placeholder: "",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "payloadHex",
+        secret: false,
+      },
+    ],
+    result: [
+      { name: "remaining", kind: "number", optional: false, label: "Remaining packets" },
+      { name: "innerType", kind: "string", optional: false, label: "Inner type" },
+      { name: "innerTypeCode", kind: "number", optional: false, label: "Inner type code" },
+      { name: "innerPayloadHex", kind: "string", optional: false, label: "Inner payload (hex)" },
+      { name: "ackCrc", kind: "number", optional: true, label: "ACK CRC32" },
+      { name: "ackCrcHex", kind: "string", optional: true, label: "ACK CRC32 (hex)" },
     ],
   },
   {
