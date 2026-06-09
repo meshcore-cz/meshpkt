@@ -78,15 +78,22 @@ direct secret   = X25519(myPriv, peerPub)[:16]
 
 | File | Contents |
 |---|---|
-| `packet.go` | Envelope encode/decode, `RouteType`, `PayloadType`, `Packet` |
-| `channel.go` | `DeriveChannelSecret`, `ChannelHash` |
+| `doc.go` | Package overview and wire-format reference |
+| `packet.go` | Envelope encode/decode, `RouteType`, `PayloadType`, `Packet`, `Option` |
 | `crypto.go` | AES-128-ECB, HMAC-SHA256, `sealMAC`/`openMAC` (unexported) |
-| `meshpkt.go` | GRP_TXT encode/decode, `Option` |
-| `txtmsg.go` | TXT_MSG encode/decode |
-| `advert.go` | ADVERT decode |
 | `keys.go` | X25519 keypair generation, ECDH (`KeyPair`, `Generate`, `SharedSecret`, …) |
+| `channel.go` | `DeriveChannelSecret`, `ChannelHash` |
+| `grptxt.go` | GRP_TXT (channel text) encode/decode |
+| `grpdata.go` | GRP_DATA (group datagram) encode/decode |
+| `txtmsg.go` | TXT_MSG (direct text) encode/decode |
+| `req.go` | REQ / RESPONSE / PATH decode + shared encrypted envelope |
+| `anonreq.go` | ANON_REQ encode/decode |
+| `advert.go` | ADVERT encode/decode |
+| `ack.go` | ACK encode/decode |
+| `control.go` | CONTROL / DISCOVER encode/decode |
 | `ops.go` | `Op` registry — declarative definitions consumed by binding layers |
 | `call.go` | `CallJSON` / `Call` — JSON dispatch for TinyGo and HTTP bindings |
+| `examples.go` | Hardware-captured packet test vectors |
 | `bindings/` | Copy-paste templates (TinyGo WASM, TypeScript codegen) — see [`bindings/README.md`](bindings/README.md) |
 
 ## Usage

@@ -1,44 +1,28 @@
-// Package meshpkt encodes and decodes MeshCore radio packet wire formats.
-//
-// It is deliberately import-pure (stdlib crypto/* and encoding/* only) so
-// the package compiles under GOOS=js GOARCH=wasm without modification.
-//
-// The full wire format (from docs/packet_format.md):
-//
-//	[header:1][transport_codes:0 or 4][path_len:1][path][payload]
-//
-// header byte layout (0bVVPPPPRR):
-//
-//	bits 1-0  route type  (RouteType)
-//	bits 5-2  payload type (PayloadType)
-//	bits 7-6  payload version (0–3)
-//
-// path_len byte layout (0bSSHHHHHH):
-//
-//	bits 5-0  hop count (0–63)
-//	bits 7-6  path hash size − 1  → size = (byte >> 6) + 1
-//
-// transport_codes (2 × uint16 LE, 4 bytes total) are present only when route
-// type is RouteTransportFlood or RouteTransportDirect.
-//
-// Payload formats:
-//   - GRP_TXT:  [channel_hash:1][mac:2][AES-128-ECB ciphertext]
-//   - TXT_MSG:  [dest_hash:1][src_hash:1][mac:2][AES-128-ECB ciphertext]
-//   - ADVERT:   [pubkey:32][ts:4 LE][sig:64][appdata...]  (unencrypted)
-//
-// Plaintext inside encrypted payloads:
-//
-//	[timestamp:4 LE][flags:1][text]
-//	flags = (txt_type << 2) | attempt
-//
-// Encryption: AES-128-ECB (zero-padded) + HMAC-SHA256(key32, ciphertext)[:2]
-// where key32 = secret16 ‖ zero16.
 package meshpkt
 
 import (
 	"encoding/binary"
 	"fmt"
 )
+
+const defaultPathHashSize = 2 // default path hash size for new packets
+
+// Option configures packet-building behaviour. It is accepted by every packet
+// encoder (GroupTextPacket, DirectTextPacket, AckPacket, …).
+type Option func(*packetOptions)
+
+type packetOptions struct {
+	pathHashSize int
+}
+
+// WithPathHashSize sets the path hash size in bytes (1–4; default 2).
+// This controls the path_len encoding (bits 7-6). For a fresh flood packet
+// with 0 hops there are no path bytes, so this only affects the path_len byte.
+func WithPathHashSize(n int) Option {
+	return func(o *packetOptions) {
+		o.pathHashSize = n
+	}
+}
 
 // RouteType is the 2-bit routing mode encoded in header bits 1-0.
 type RouteType byte
