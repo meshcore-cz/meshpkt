@@ -2,9 +2,7 @@ package meshpkt
 
 import (
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -223,16 +221,3 @@ func DecodePathPayloadFromKeys(payload []byte, privHex, peerPubHex string) (Retu
 	}
 	return DecodePathPayload(shared[:cipherKeySize], payload)
 }
-
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-// trimNul removes a trailing NUL byte and surrounding whitespace.
-func trimNul(s string) string {
-	if idx := strings.IndexByte(s, 0); idx >= 0 {
-		s = s[:idx]
-	}
-	return strings.TrimSpace(s)
-}
-
-// hexBytes returns a hex string for a byte slice (empty → "").
-func hexBytes(b []byte) string { return hex.EncodeToString(b) }

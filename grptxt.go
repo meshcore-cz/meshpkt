@@ -7,26 +7,7 @@ import (
 	"time"
 )
 
-const (
-	defaultPathHashSize = 2 // default path hash size for new packets
-	txtTypePlain        = 0 // TXT_TYPE_PLAIN
-)
-
-// Option configures packet-building behaviour.
-type Option func(*packetOptions)
-
-type packetOptions struct {
-	pathHashSize int
-}
-
-// WithPathHashSize sets the path hash size in bytes (1–4; default 2).
-// This controls the path_len encoding (bits 7-6). For a fresh flood packet
-// with 0 hops there are no path bytes, so this only affects the path_len byte.
-func WithPathHashSize(n int) Option {
-	return func(o *packetOptions) {
-		o.pathHashSize = n
-	}
-}
+const txtTypePlain = 0 // TXT_TYPE_PLAIN
 
 // GroupText holds the decoded content of a GRP_TXT (channel text) message.
 type GroupText struct {
