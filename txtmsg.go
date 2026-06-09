@@ -9,11 +9,11 @@ import (
 
 // DirectText holds the decoded content of a TXT_MSG (direct text) message.
 type DirectText struct {
-	DestHash  byte      // first byte of recipient's public key
-	SrcHash   byte      // first byte of sender's public key
+	DestHash  byte // first byte of recipient's public key
+	SrcHash   byte // first byte of sender's public key
 	Timestamp time.Time
-	TxtType   byte   // upper 6 bits of flags byte (0 = plain text)
-	Attempt   byte   // lower 2 bits of flags byte
+	TxtType   byte // upper 6 bits of flags byte (0 = plain text)
+	Attempt   byte // lower 2 bits of flags byte
 	Text      string
 }
 

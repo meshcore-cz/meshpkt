@@ -1,3 +1,6 @@
+//go:build js && wasm
+// +build js,wasm
+
 // Template: copy to your project as cmd/meshpkt-wasm-lite/main.go
 //
 // TinyGo browser WASM — registers window.meshpktCall(opName, argsJSON).
@@ -5,10 +8,13 @@
 // The frontend builds typed wrappers from meshcoreOpNames in generated wasm.gen.ts.
 //
 // Build:
-//   tinygo build -target=wasm -no-debug -opt=z -panic=trap \
-//     -o web/public/meshpkt.wasm ./cmd/meshpkt-wasm-lite
+//
+//	tinygo build -target=wasm -no-debug -opt=z -panic=trap \
+//	  -o web/public/meshpkt.wasm ./cmd/meshpkt-wasm-lite
+//
 // Runtime:
-//   cp "$(tinygo env TINYGOROOT)/targets/wasm_exec.js" web/public/
+//
+//	cp "$(tinygo env TINYGOROOT)/targets/wasm_exec.js" web/public/
 package main
 
 import (

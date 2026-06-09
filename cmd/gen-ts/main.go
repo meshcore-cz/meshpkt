@@ -3,7 +3,8 @@
 // Generates TypeScript interfaces from meshpkt.Ops for typed window.meshcore calls.
 //
 // Usage:
-//   go run ./cmd/gen-ts -out web/src/lib/wasm.gen.ts
+//
+//	go run ./cmd/gen-ts -out web/src/lib/wasm.gen.ts
 package main
 
 import (
