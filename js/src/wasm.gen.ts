@@ -1871,7 +1871,7 @@ export const OpMetas: OpMeta[] = [
         group: "",
         action: "",
         widget: "",
-        autoFill: "packetHex",
+        autoFill: "",
         secret: false,
       },
     ],
