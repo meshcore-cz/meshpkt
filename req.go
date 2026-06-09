@@ -84,9 +84,10 @@ func DecodeReqPayload(shared16, payload []byte) (Req, error) {
 	}, nil
 }
 
-// DecodeReqPayloadFromKeys derives the shared secret from hex keys and decodes a REQ payload.
-func DecodeReqPayloadFromKeys(payload []byte, privHex, peerPubHex string) (Req, error) {
-	shared, _, _, err := keysAndSecret(privHex, peerPubHex)
+// DecodeReqPayloadWithIdentity derives the shared secret from id and
+// peerPublicKey (Ed25519) and decodes the REQ payload.
+func DecodeReqPayloadWithIdentity(payload []byte, id Identity, peerPublicKey [32]byte) (Req, error) {
+	shared, err := id.SharedSecret(peerPublicKey)
 	if err != nil {
 		return Req{}, err
 	}
@@ -118,13 +119,15 @@ func ReqPacket(shared16 []byte, destHash, srcHash byte, reqType byte, data []byt
 	})
 }
 
-// ReqPacketFromKeys performs X25519 ECDH and builds a REQ packet.
-func ReqPacketFromKeys(privHex, peerPubHex string, reqType byte, data []byte, opts ...Option) ([]byte, error) {
-	shared, myPub, peerPub, err := keysAndSecret(privHex, peerPubHex)
+// ReqPacketFromIdentity derives the shared secret from id and peerPublicKey
+// (Ed25519) and builds a REQ packet.
+// destHash = peerPublicKey[0], srcHash = id.PublicKey[0].
+func ReqPacketFromIdentity(id Identity, peerPublicKey [32]byte, reqType byte, data []byte, opts ...Option) ([]byte, error) {
+	shared, err := id.SharedSecret(peerPublicKey)
 	if err != nil {
 		return nil, err
 	}
-	return ReqPacket(shared[:cipherKeySize], peerPub[0], myPub[0], reqType, data, opts...)
+	return ReqPacket(shared[:cipherKeySize], peerPublicKey[0], id.PublicKey[0], reqType, data, opts...)
 }
 
 // ── RESPONSE ─────────────────────────────────────────────────────────────────
@@ -146,9 +149,10 @@ func DecodeResponsePayload(shared16, payload []byte) (Response, error) {
 	return Response{DestHash: destHash, SrcHash: srcHash, Data: plain}, nil
 }
 
-// DecodeResponsePayloadFromKeys derives the shared secret and decodes a RESPONSE payload.
-func DecodeResponsePayloadFromKeys(payload []byte, privHex, peerPubHex string) (Response, error) {
-	shared, _, _, err := keysAndSecret(privHex, peerPubHex)
+// DecodeResponsePayloadWithIdentity derives the shared secret from id and
+// peerPublicKey (Ed25519) and decodes the RESPONSE payload.
+func DecodeResponsePayloadWithIdentity(payload []byte, id Identity, peerPublicKey [32]byte) (Response, error) {
+	shared, err := id.SharedSecret(peerPublicKey)
 	if err != nil {
 		return Response{}, err
 	}
@@ -213,9 +217,10 @@ func DecodePathPayload(shared16, payload []byte) (ReturnedPath, error) {
 	}, nil
 }
 
-// DecodePathPayloadFromKeys derives the shared secret and decodes a PATH payload.
-func DecodePathPayloadFromKeys(payload []byte, privHex, peerPubHex string) (ReturnedPath, error) {
-	shared, _, _, err := keysAndSecret(privHex, peerPubHex)
+// DecodePathPayloadWithIdentity derives the shared secret from id and
+// peerPublicKey (Ed25519) and decodes the PATH payload.
+func DecodePathPayloadWithIdentity(payload []byte, id Identity, peerPublicKey [32]byte) (ReturnedPath, error) {
+	shared, err := id.SharedSecret(peerPublicKey)
 	if err != nil {
 		return ReturnedPath{}, err
 	}

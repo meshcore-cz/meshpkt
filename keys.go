@@ -17,11 +17,11 @@ import (
 // secrets for message encryption via Ed25519-to-X25519 key conversion
 // (matching firmware's Identity::calcSharedSecret / ed25519_key_exchange).
 //
-// Store Seed (the 32-byte seed) to persist and restore the identity.
+// The canonical persisted form is the 32-byte Seed. Store Seed (or its
+// hex encoding via SeedHex) to persist and restore the identity.
 type Identity struct {
-	PublicKey  [32]byte // Ed25519 public key — embed in Advert.PublicKey
-	PrivateKey [64]byte // Ed25519 private key (seed ‖ public key)
-	Seed       [32]byte // 32-byte canonical seed for storage
+	PublicKey [32]byte // Ed25519 public key — embed in Advert.PublicKey
+	Seed      [32]byte // 32-byte canonical seed for storage
 }
 
 // GenerateIdentity creates a fresh Ed25519 node identity.
@@ -32,7 +32,6 @@ func GenerateIdentity() (Identity, error) {
 	}
 	var id Identity
 	copy(id.PublicKey[:], pub)
-	copy(id.PrivateKey[:], priv)
 	copy(id.Seed[:], priv.Seed())
 	return id, nil
 }
@@ -42,14 +41,48 @@ func IdentityFromSeed(seed [32]byte) (Identity, error) {
 	priv := ed25519.NewKeyFromSeed(seed[:])
 	var id Identity
 	copy(id.PublicKey[:], priv.Public().(ed25519.PublicKey))
-	copy(id.PrivateKey[:], priv)
 	id.Seed = seed
 	return id, nil
 }
 
+// IdentityFromSeedHex restores an Ed25519 identity from a 64-character hex seed.
+func IdentityFromSeedHex(seedHex string) (Identity, error) {
+	b, err := hex.DecodeString(seedHex)
+	if err != nil {
+		return Identity{}, fmt.Errorf("meshpkt: invalid seed hex: %w", err)
+	}
+	if len(b) != 32 {
+		return Identity{}, fmt.Errorf("meshpkt: seed must be 32 bytes, got %d", len(b))
+	}
+	return IdentityFromSeed([32]byte(b))
+}
+
+// ParseIdentityPublicKeyHex decodes a 64-character hex Ed25519 public key.
+func ParseIdentityPublicKeyHex(pubHex string) ([32]byte, error) {
+	b, err := hex.DecodeString(pubHex)
+	if err != nil {
+		return [32]byte{}, fmt.Errorf("meshpkt: invalid public key hex: %w", err)
+	}
+	if len(b) != 32 {
+		return [32]byte{}, fmt.Errorf("meshpkt: public key must be 32 bytes, got %d", len(b))
+	}
+	return [32]byte(b), nil
+}
+
+// SeedHex returns the identity seed as a 64-character lowercase hex string.
+func (id Identity) SeedHex() string {
+	return hex.EncodeToString(id.Seed[:])
+}
+
+// PublicKeyHex returns the Ed25519 public key as a 64-character lowercase hex string.
+func (id Identity) PublicKeyHex() string {
+	return hex.EncodeToString(id.PublicKey[:])
+}
+
 // Sign signs message with the Ed25519 identity and returns the 64-byte signature.
+// The private key is derived from Seed on each call and not stored.
 func (id Identity) Sign(message []byte) [64]byte {
-	priv := ed25519.PrivateKey(id.PrivateKey[:])
+	priv := ed25519.NewKeyFromSeed(id.Seed[:])
 	sig := ed25519.Sign(priv, message)
 	var out [64]byte
 	copy(out[:], sig)
@@ -57,7 +90,7 @@ func (id Identity) Sign(message []byte) [64]byte {
 }
 
 // Verify reports whether signature is a valid Ed25519 signature over message
-// by the key publicKey.
+// by publicKey.
 func Verify(publicKey [32]byte, message []byte, signature [64]byte) bool {
 	return ed25519.Verify(ed25519.PublicKey(publicKey[:]), message, signature[:])
 }
@@ -67,6 +100,9 @@ func Verify(publicKey [32]byte, message []byte, signature [64]byte) bool {
 // the same derivation so alice.SharedSecret(bob.PublicKey) ==
 // bob.SharedSecret(alice.PublicKey).
 //
+// peerPublicKey is the peer's Ed25519 public key (not an X25519 key).
+// The Ed25519→X25519 conversion is performed internally.
+//
 // Derivation:
 //  1. Convert peerPublicKey (Edwards25519) to Montgomery-form X25519 public key.
 //  2. Derive our X25519 scalar: SHA-512(seed)[0:32] with standard bit clamping.
@@ -75,13 +111,14 @@ func (id Identity) SharedSecret(peerPublicKey [32]byte) ([32]byte, error) {
 	// Convert peer Ed25519 public key (Edwards) → X25519 (Montgomery).
 	edPoint, err := new(edwards25519.Point).SetBytes(peerPublicKey[:])
 	if err != nil {
-		return [32]byte{}, fmt.Errorf("meshpkt: invalid peer public key: %w", err)
+		return [32]byte{}, fmt.Errorf("meshpkt: invalid peer Ed25519 public key: %w", err)
 	}
 	peerMontgomery := edPoint.BytesMontgomery()
 
 	// Derive X25519 private scalar from our Ed25519 seed.
 	h := sha512.Sum512(id.Seed[:])
-	scalar := h[:32]
+	scalar := make([]byte, 32)
+	copy(scalar, h[:32])
 	scalar[0] &= 248
 	scalar[31] &= 127
 	scalar[31] |= 64
@@ -102,105 +139,21 @@ func (id Identity) SharedSecret(peerPublicKey [32]byte) ([32]byte, error) {
 	return [32]byte(shared), nil
 }
 
-// ── Legacy X25519 API ─────────────────────────────────────────────────────────
-// The functions below use native X25519 keypairs, not firmware-compatible
-// Ed25519 identities. They remain for internal use by the direct-message,
-// REQ, RESPONSE, and ANON_REQ helpers that rely on hex-encoded key pairs.
-// Do not use these as MeshCore node identities.
-
-// KeyPair holds a native X25519 identity keypair (not a MeshCore Ed25519 identity).
-type KeyPair struct {
-	// PublicKey is the hex-encoded 32-byte X25519 public key.
-	PublicKey string
-	// PrivateKey is the hex-encoded 32-byte X25519 private scalar.
-	PrivateKey string
-}
-
-// Generate creates a fresh random X25519 keypair.
-// Note: this is NOT a firmware-compatible identity. Use GenerateIdentity
-// for MeshCore node identities. This function exists for use with the
-// direct-message and request helpers that accept hex key strings.
-func Generate() (KeyPair, error) {
-	priv, err := ecdh.X25519().GenerateKey(rand.Reader)
-	if err != nil {
-		return KeyPair{}, fmt.Errorf("meshpkt: generate: %w", err)
-	}
-	return KeyPair{
-		PublicKey:  hex.EncodeToString(priv.PublicKey().Bytes()),
-		PrivateKey: hex.EncodeToString(priv.Bytes()),
-	}, nil
-}
-
-// ParsePublicKey validates and decodes a hex-encoded 32-byte X25519 public key.
-func ParsePublicKey(hexKey string) ([]byte, error) {
-	b, err := hex.DecodeString(hexKey)
-	if err != nil {
-		return nil, fmt.Errorf("meshpkt: invalid public key: %w", err)
-	}
-	if len(b) != 32 {
-		return nil, fmt.Errorf("meshpkt: public key must be 32 bytes, got %d", len(b))
-	}
-	if _, err := ecdh.X25519().NewPublicKey(b); err != nil {
-		return nil, fmt.Errorf("meshpkt: invalid public key: %w", err)
-	}
-	return b, nil
-}
-
-// ParsePrivateKey validates and decodes a hex-encoded 32-byte X25519 private scalar.
-func ParsePrivateKey(hexKey string) ([]byte, error) {
-	b, err := hex.DecodeString(hexKey)
-	if err != nil {
-		return nil, fmt.Errorf("meshpkt: invalid private key: %w", err)
-	}
-	if len(b) != 32 {
-		return nil, fmt.Errorf("meshpkt: private key must be 32 bytes, got %d", len(b))
-	}
-	if _, err := ecdh.X25519().NewPrivateKey(b); err != nil {
-		return nil, fmt.Errorf("meshpkt: invalid private key: %w", err)
-	}
-	return b, nil
-}
-
-// PublicKeyFromPrivate derives the X25519 public key from a hex-encoded private scalar.
-func PublicKeyFromPrivate(hexPriv string) (string, error) {
-	b, err := ParsePrivateKey(hexPriv)
-	if err != nil {
-		return "", err
-	}
-	priv, err := ecdh.X25519().NewPrivateKey(b)
-	if err != nil {
-		return "", fmt.Errorf("meshpkt: %w", err)
-	}
-	return hex.EncodeToString(priv.PublicKey().Bytes()), nil
-}
-
-// SharedSecret performs X25519 ECDH and returns the 32-byte shared secret.
-// Callers typically use only the first 16 bytes as an AES-128 key.
-//
-// Note: this uses native X25519 keys (generated by Generate), not
-// firmware-compatible Ed25519 identities. For on-air interoperability with
-// real MeshCore nodes use Identity.SharedSecret instead.
-func SharedSecret(privHex, pubHex string) ([]byte, error) {
-	privBytes, err := ParsePrivateKey(privHex)
-	if err != nil {
-		return nil, err
-	}
-	pubBytes, err := ParsePublicKey(pubHex)
-	if err != nil {
-		return nil, err
-	}
+// DeriveX25519 derives the firmware-compatible X25519 private scalar and its
+// corresponding public key from an Ed25519 seed, using SHA-512(seed)[0:32]
+// with standard bit-clamping. Useful for debugging and cross-checking against
+// firmware. Identity.SharedSecret performs this derivation internally.
+func DeriveX25519(seed [32]byte) (privHex, pubHex string, err error) {
+	h := sha512.Sum512(seed[:])
+	scalar := make([]byte, 32)
+	copy(scalar, h[:32])
+	scalar[0] &= 248
+	scalar[31] &= 127
+	scalar[31] |= 64
 	curve := ecdh.X25519()
-	priv, err := curve.NewPrivateKey(privBytes)
-	if err != nil {
-		return nil, fmt.Errorf("meshpkt: invalid private key: %w", err)
+	priv, e := curve.NewPrivateKey(scalar)
+	if e != nil {
+		return "", "", fmt.Errorf("meshpkt: derive X25519: %w", e)
 	}
-	pub, err := curve.NewPublicKey(pubBytes)
-	if err != nil {
-		return nil, fmt.Errorf("meshpkt: invalid public key: %w", err)
-	}
-	shared, err := priv.ECDH(pub)
-	if err != nil {
-		return nil, fmt.Errorf("meshpkt: ECDH: %w", err)
-	}
-	return shared, nil
+	return hex.EncodeToString(scalar), hex.EncodeToString(priv.PublicKey().Bytes()), nil
 }

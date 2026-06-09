@@ -43,6 +43,7 @@ export interface AdvertPayload {
   hasGPS: boolean;
   lat?: number;
   lon?: number;
+  signature: string;
   sigVerified: boolean;
 }
 export interface AckPayload {
@@ -111,6 +112,9 @@ export interface KeypairResult {
   publicKey: string;
   privateKey: string;
 }
+export interface PubkeyFromPrivkeyResult {
+  publicKey: string;
+}
 
 export interface MeshcoreWasm {
   encodeGroupText(channelName: string, sender: string, text: string): HexResult | ErrResult;
@@ -142,6 +146,7 @@ export interface MeshcoreWasm {
   decodeTrace(packet: string): TracePayload | ErrResult;
   decodeMultipart(payload: string): MultipartPayload | ErrResult;
   generateKeypair(): KeypairResult | ErrResult;
+  pubkeyFromPrivkey(privKey: string): PubkeyFromPrivkeyResult | ErrResult;
   deriveChannelSecret(channelName: string): HexResult | ErrResult;
   sharedSecret(privKey: string, peerPubKey: string): HexResult | ErrResult;
 }
@@ -176,6 +181,7 @@ export const meshcoreOpNames = [
   "decodeTrace",
   "decodeMultipart",
   "generateKeypair",
+  "pubkeyFromPrivkey",
   "deriveChannelSecret",
   "sharedSecret",
 ] as const
@@ -1406,6 +1412,7 @@ export const OpMetas: OpMeta[] = [
       { name: "hasGPS", kind: "boolean", optional: false, label: "Has GPS" },
       { name: "lat", kind: "number", optional: true, label: "Latitude" },
       { name: "lon", kind: "number", optional: true, label: "Longitude" },
+      { name: "signature", kind: "string", optional: false, label: "Signature (hex)" },
       { name: "sigVerified", kind: "boolean", optional: false, label: "Signature verified" },
     ],
   },
@@ -1917,6 +1924,38 @@ export const OpMetas: OpMeta[] = [
     result: [
       { name: "publicKey", kind: "string", optional: false, label: "Public key" },
       { name: "privateKey", kind: "string", optional: false, label: "Private key" },
+    ],
+  },
+  {
+    name: "pubkeyFromPrivkey",
+    category: "key",
+    label: "Derive public key from private key",
+    tabGroup: "",
+    tabGroupLabel: "",
+    tabGroupSub: "",
+    tabGroupDoc: "",
+    tabLabel: "",
+    packetType: "",
+    resultTypeName: "PubkeyFromPrivkeyResult",
+    params: [
+      {
+        name: "privKey",
+        kind: "string",
+        label: "Private key",
+        placeholder: "64 hex chars",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "",
+        secret: false,
+      },
+    ],
+    result: [
+      { name: "publicKey", kind: "string", optional: false, label: "Public key" },
     ],
   },
   {
