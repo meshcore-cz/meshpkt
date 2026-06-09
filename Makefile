@@ -72,17 +72,13 @@ js-check: js-build
 	git diff --exit-code -- $(JS_DIR)/src/wasm.gen.ts
 	cd $(JS_DIR) && npm pack --dry-run
 
-release: check js-check
+release: check
 	@test -n "$(VERSION)" || { \
 		echo "Missing VERSION. Example: make release VERSION=v0.1.0"; \
 		exit 1; \
 	}
 	@echo "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$$' || { \
 		echo "Invalid VERSION: $(VERSION). Expected format: v0.1.0"; \
-		exit 1; \
-	}
-	@test "v$$(node -p "require('./js/package.json').version")" = "$(VERSION)" || { \
-		echo "js/package.json version does not match $(VERSION)"; \
 		exit 1; \
 	}
 	@test "$$(git branch --show-current)" = "main" || { \
@@ -102,9 +98,13 @@ release: check js-check
 		echo "Tag $(VERSION) already exists"; \
 		exit 1; \
 	}
+	cd $(JS_DIR) && npm version --no-git-tag-version "$$(echo '$(VERSION)' | sed 's/^v//')"
+	$(MAKE) js-check
+	git add $(JS_DIR)/package.json $(JS_DIR)/package-lock.json
+	git commit -m "chore: release $(VERSION)"
 	git tag -a "$(VERSION)" -m "meshpkt $(VERSION)"
-	git push origin "$(VERSION)"
-	@echo "Published $(VERSION)"
+	git push origin main "$(VERSION)"
+	@echo "Released $(VERSION)"
 
 npm-publish: js-check
 	cd $(JS_DIR) && npm publish --access public
