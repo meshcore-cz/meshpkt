@@ -119,7 +119,7 @@ export interface MeshcoreWasm {
   encodeGrpData(channelName: string, dataType: number, data: string): HexResult | ErrResult;
   encodeGrpDataSecret(secret: string, dataType: number, data: string): HexResult | ErrResult;
   encodeDirectText(identitySeed: string, peerPublicKey: string, text: string): HexResult | ErrResult;
-  encodeAdvert(pubKey: string, signature: string, name: string, hasGPS: number, lat: number, lon: number): HexResult | ErrResult;
+  encodeAdvert(pubKey: string, signature: string, name: string, hasGPS: number, lat: number, lon: number, timestamp: number): HexResult | ErrResult;
   encodeAck(crc: number): HexResult | ErrResult;
   encodeReq(identitySeed: string, peerPublicKey: string, reqType: number, data: string): HexResult | ErrResult;
   encodeAnonReq(destPublicKey: string, identitySeed: string, data: string): HexResult | ErrResult;
@@ -654,6 +654,21 @@ export const OpMetas: OpMeta[] = [
         showWhen: "hasGPS",
         showValue: 1,
         group: "gps",
+        action: "",
+        widget: "",
+        autoFill: "",
+        secret: false,
+      },
+      {
+        name: "timestamp",
+        kind: "int",
+        label: "Timestamp (Unix sec, 0 = now)",
+        placeholder: "0",
+        optional: true,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
         action: "",
         widget: "",
         autoFill: "",
