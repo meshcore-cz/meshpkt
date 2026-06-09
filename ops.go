@@ -265,6 +265,7 @@ var Ops = []Op{
 			{Name: "hasGPS", Kind: ParamInt, Label: "Include GPS coordinates", Widget: "checkbox"},
 			{Name: "lat", Kind: ParamFloat, Label: "Latitude (°)", Placeholder: "51.5074", ShowWhen: "hasGPS", ShowValue: 1, Group: "gps"},
 			{Name: "lon", Kind: ParamFloat, Label: "Longitude (°)", Placeholder: "-0.1278", ShowWhen: "hasGPS", ShowValue: 1, Group: "gps"},
+			{Name: "timestamp", Kind: ParamInt, Label: "Timestamp (Unix sec, 0 = now)", Placeholder: "0", Optional: true},
 		},
 		Result:         []ResultField{{Name: "hex", Kind: ResultString, Label: "Hex packet"}},
 		ResultTypeName: "HexResult",
@@ -277,6 +278,9 @@ var Ops = []Op{
 				HasGPS:    args[3].(int) != 0,
 				Lat:       args[4].(float64),
 				Lon:       args[5].(float64),
+			}
+			if ts := args[6].(int); ts != 0 {
+				adv.Timestamp = time.Unix(int64(ts), 0)
 			}
 			payload, err := EncodeAdvertPayload(adv)
 			if err != nil {
