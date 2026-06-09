@@ -47,6 +47,12 @@ func ParseOpArgs(op Op, raw []json.RawMessage) ([]any, error) {
 				return nil, fmt.Errorf("arg %q: %w", p.Name, err)
 			}
 			args[i] = n
+		case ParamFloat:
+			var f float64
+			if err := json.Unmarshal(raw[i], &f); err != nil {
+				return nil, fmt.Errorf("arg %q: %w", p.Name, err)
+			}
+			args[i] = f
 		default:
 			return nil, fmt.Errorf("arg %q: unsupported param kind", p.Name)
 		}
