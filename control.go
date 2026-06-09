@@ -126,7 +126,7 @@ func DiscoverReqPacket(typeFilter byte, tag, since uint32, prefixOnly bool, opts
 	for _, opt := range opts {
 		opt(o)
 	}
-	flags := byte(ControlSubDiscoverReq<<4) // 0x80
+	flags := byte(ControlSubDiscoverReq << 4) // 0x80
 	if prefixOnly {
 		flags |= 0x01
 	}
