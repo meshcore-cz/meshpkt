@@ -518,8 +518,8 @@ func TestSignAndVerifyAdvert(t *testing.T) {
 		t.Fatalf("unsigned decode: %v", err)
 	}
 
-	// Sign with identity seed.
-	signed, err := SignAdvertPayload(payload, id.Seed[:])
+	// Sign with 64-byte private key.
+	signed, err := SignAdvertPayload(payload, id.PrivateKey[:])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -575,7 +575,7 @@ func TestSignAdvert_WrongKey(t *testing.T) {
 	adv := Advert{PublicKey: id.PublicKey[:], Name: "WrongKey"}
 	payload, _ := EncodeAdvertPayload(adv)
 
-	_, err := SignAdvertPayload(payload, other.Seed[:])
+	_, err := SignAdvertPayload(payload, other.PrivateKey[:])
 	if err == nil {
 		t.Fatal("expected error when signing with wrong key")
 	}
@@ -586,7 +586,7 @@ func TestDecodeAdvert_BadSignature(t *testing.T) {
 
 	adv := Advert{PublicKey: id.PublicKey[:], Name: "BadSig"}
 	payload, _ := EncodeAdvertPayload(adv)
-	signed, _ := SignAdvertPayload(payload, id.Seed[:])
+	signed, _ := SignAdvertPayload(payload, id.PrivateKey[:])
 
 	// Tamper with the name in appdata (byte 101 is the flags, 102+ is the name).
 	tampered := make([]byte, len(signed))
@@ -793,8 +793,8 @@ func TestIdentityFromSeed_RoundTrip(t *testing.T) {
 	if id1.PublicKey != id2.PublicKey {
 		t.Error("PublicKey differs after restore from seed")
 	}
-	if id1.Seed != id2.Seed {
-		t.Error("Seed differs after restore from seed")
+	if id1.PrivateKey != id2.PrivateKey {
+		t.Error("PrivateKey differs after restore from seed")
 	}
 }
 

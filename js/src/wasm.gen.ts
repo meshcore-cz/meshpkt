@@ -43,7 +43,6 @@ export interface AdvertPayload {
   hasGPS: boolean;
   lat?: number;
   lon?: number;
-  signature: string;
   sigVerified: boolean;
 }
 export interface AckPayload {
@@ -108,9 +107,9 @@ export interface MultipartPayload {
   ackCrc?: number;
   ackCrcHex?: string;
 }
-export interface IdentityResult {
-  seed: string;
+export interface KeypairResult {
   publicKey: string;
+  privateKey: string;
 }
 
 export interface MeshcoreWasm {
@@ -118,11 +117,11 @@ export interface MeshcoreWasm {
   encodeGroupTextSecret(secret: string, sender: string, text: string): HexResult | ErrResult;
   encodeGrpData(channelName: string, dataType: number, data: string): HexResult | ErrResult;
   encodeGrpDataSecret(secret: string, dataType: number, data: string): HexResult | ErrResult;
-  encodeDirectText(identitySeed: string, peerPublicKey: string, text: string): HexResult | ErrResult;
-  encodeAdvert(pubKey: string, signature: string, name: string, hasGPS: number, lat: number, lon: number, timestamp: number): HexResult | ErrResult;
+  encodeDirectText(privKey: string, peerPubKey: string, text: string): HexResult | ErrResult;
+  encodeAdvert(pubKey: string, signature: string, name: string, hasGPS: number, lat: number, lon: number): HexResult | ErrResult;
   encodeAck(crc: number): HexResult | ErrResult;
-  encodeReq(identitySeed: string, peerPublicKey: string, reqType: number, data: string): HexResult | ErrResult;
-  encodeAnonReq(destPublicKey: string, identitySeed: string, data: string): HexResult | ErrResult;
+  encodeReq(privKey: string, peerPubKey: string, reqType: number, data: string): HexResult | ErrResult;
+  encodeAnonReq(destPubKey: string, myPrivKey: string, data: string): HexResult | ErrResult;
   encodeDiscoverReq(typeFilter: number, tag: number, since: number, prefixOnly: number): HexResult | ErrResult;
   encodeTrace(tag: number, authCode: number, flags: number, routeHashes: string): HexResult | ErrResult;
   encodeMultipartAck(remaining: number, crc: number): HexResult | ErrResult;
@@ -130,23 +129,21 @@ export interface MeshcoreWasm {
   decodeEnvelope(packet: string): Envelope | ErrResult;
   decodeGroupText(payload: string, channelName: string): GroupTextPayload | ErrResult;
   decodeGroupTextSecret(payload: string, secret: string): GroupTextPayload | ErrResult;
-  decodeDirectText(payload: string, identitySeed: string, peerPublicKey: string): DirectTextPayload | ErrResult;
+  decodeDirectText(payload: string, privKey: string, peerPubKey: string): DirectTextPayload | ErrResult;
   decodeAdvert(payload: string): AdvertPayload | ErrResult;
   decodeAck(payload: string): AckPayload | ErrResult;
   decodeGrpData(payload: string, channelName: string): GrpDataPayload | ErrResult;
   decodeGrpDataSecret(payload: string, secret: string): GrpDataPayload | ErrResult;
-  decodeReq(payload: string, identitySeed: string, peerPublicKey: string): ReqPayload | ErrResult;
-  decodeResponse(payload: string, identitySeed: string, peerPublicKey: string): ResponsePayload | ErrResult;
-  decodePath(payload: string, identitySeed: string, peerPublicKey: string): PathPayload | ErrResult;
-  decodeAnonReq(payload: string, identitySeed: string): AnonReqPayload | ErrResult;
+  decodeReq(payload: string, privKey: string, peerPubKey: string): ReqPayload | ErrResult;
+  decodeResponse(payload: string, privKey: string, peerPubKey: string): ResponsePayload | ErrResult;
+  decodePath(payload: string, privKey: string, peerPubKey: string): PathPayload | ErrResult;
+  decodeAnonReq(payload: string, myPrivKey: string): AnonReqPayload | ErrResult;
   decodeControl(payload: string): ControlPayload | ErrResult;
   decodeTrace(packet: string): TracePayload | ErrResult;
   decodeMultipart(payload: string): MultipartPayload | ErrResult;
-  encodeSignedAdvert(seed: string, name: string, hasGPS: number, lat: number, lon: number): HexResult | ErrResult;
-  generateIdentity(): IdentityResult | ErrResult;
-  identityFromSeed(seed: string): IdentityResult | ErrResult;
+  generateKeypair(): KeypairResult | ErrResult;
   deriveChannelSecret(channelName: string): HexResult | ErrResult;
-  identitySharedSecret(identitySeed: string, peerPublicKey: string): HexResult | ErrResult;
+  sharedSecret(privKey: string, peerPubKey: string): HexResult | ErrResult;
 }
 
 export const meshcoreOpNames = [
@@ -178,11 +175,9 @@ export const meshcoreOpNames = [
   "decodeControl",
   "decodeTrace",
   "decodeMultipart",
-  "encodeSignedAdvert",
-  "generateIdentity",
-  "identityFromSeed",
+  "generateKeypair",
   "deriveChannelSecret",
-  "identitySharedSecret",
+  "sharedSecret",
 ] as const
 
 export const RouteTypes = [
@@ -502,30 +497,30 @@ export const OpMetas: OpMeta[] = [
     tabGroup: "txtmsg",
     tabGroupLabel: "TXT_MSG",
     tabGroupSub: "direct message",
-    tabGroupDoc: "A private text message addressed to a single peer. Encrypted end-to-end with a shared secret derived from the sender's Ed25519 identity seed and the peer's Ed25519 public key.",
+    tabGroupDoc: "A private text message addressed to a single peer. Encrypted end-to-end with a shared secret derived from your private key and the peer's public key via X25519 ECDH.",
     tabLabel: "",
     packetType: "",
     resultTypeName: "EncodeDirectTextResult",
     params: [
       {
-        name: "identitySeed",
-        kind: "hex",
-        label: "Identity seed (32 bytes)",
+        name: "privKey",
+        kind: "string",
+        label: "My private key",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
         showWhen: "",
         showValue: 0,
         group: "",
-        action: "identity",
+        action: "keypair",
         widget: "",
         autoFill: "",
         secret: true,
       },
       {
-        name: "peerPublicKey",
-        kind: "hex",
-        label: "Peer Ed25519 public key (32 bytes)",
+        name: "peerPubKey",
+        kind: "string",
+        label: "Peer public key",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
@@ -572,14 +567,14 @@ export const OpMetas: OpMeta[] = [
       {
         name: "pubKey",
         kind: "hex",
-        label: "Ed25519 public key (32 bytes)",
+        label: "Public key (32 bytes)",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
         showWhen: "",
         showValue: 0,
         group: "",
-        action: "identity-pub",
+        action: "keypair-pub",
         widget: "",
         autoFill: "",
         secret: false,
@@ -659,21 +654,6 @@ export const OpMetas: OpMeta[] = [
         autoFill: "",
         secret: false,
       },
-      {
-        name: "timestamp",
-        kind: "int",
-        label: "Timestamp (Unix sec, 0 = now)",
-        placeholder: "0",
-        optional: true,
-        choices: [],
-        showWhen: "",
-        showValue: 0,
-        group: "",
-        action: "",
-        widget: "",
-        autoFill: "",
-        secret: false,
-      },
     ],
     result: [
       { name: "hex", kind: "string", optional: false, label: "Hex packet" },
@@ -718,30 +698,30 @@ export const OpMetas: OpMeta[] = [
     tabGroup: "req",
     tabGroupLabel: "REQ",
     tabGroupSub: "request",
-    tabGroupDoc: "An encrypted request sent to a known peer (e.g. login, get stats, keepalive). Uses Ed25519 identity ECDH for the shared secret.",
+    tabGroupDoc: "An encrypted request sent to a known peer (e.g. login, get stats, keepalive). Uses X25519 ECDH shared-secret encryption with a request-type byte selecting the operation.",
     tabLabel: "",
     packetType: "",
     resultTypeName: "HexResult",
     params: [
       {
-        name: "identitySeed",
-        kind: "hex",
-        label: "Identity seed (32 bytes)",
+        name: "privKey",
+        kind: "string",
+        label: "My private key",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
         showWhen: "",
         showValue: 0,
         group: "",
-        action: "identity",
+        action: "keypair",
         widget: "",
         autoFill: "",
         secret: true,
       },
       {
-        name: "peerPublicKey",
-        kind: "hex",
-        label: "Peer Ed25519 public key (32 bytes)",
+        name: "peerPubKey",
+        kind: "string",
+        label: "Peer public key",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
@@ -800,15 +780,15 @@ export const OpMetas: OpMeta[] = [
     tabGroup: "anonreq",
     tabGroupLabel: "ANON_REQ",
     tabGroupSub: "anonymous request",
-    tabGroupDoc: "A first-contact request from a sender the recipient doesn't yet know. The sender's Ed25519 public key is embedded so the recipient can derive the shared ECDH secret — used when initially connecting to a repeater or room server.",
+    tabGroupDoc: "A first-contact request from a sender the recipient doesn't yet know. The sender's ephemeral public key is embedded so the recipient can derive the shared ECDH secret — used when initially connecting to a repeater or room server.",
     tabLabel: "",
     packetType: "",
     resultTypeName: "HexResult",
     params: [
       {
-        name: "destPublicKey",
+        name: "destPubKey",
         kind: "hex",
-        label: "Destination Ed25519 public key (32 bytes)",
+        label: "Destination public key (32 bytes)",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
@@ -821,16 +801,16 @@ export const OpMetas: OpMeta[] = [
         secret: false,
       },
       {
-        name: "identitySeed",
-        kind: "hex",
-        label: "My identity seed (32 bytes)",
+        name: "myPrivKey",
+        kind: "string",
+        label: "My private key",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
         showWhen: "",
         showValue: 0,
         group: "",
-        action: "identity",
+        action: "keypair",
         widget: "",
         autoFill: "",
         secret: true,
@@ -1351,24 +1331,24 @@ export const OpMetas: OpMeta[] = [
         secret: false,
       },
       {
-        name: "identitySeed",
-        kind: "hex",
-        label: "Identity seed (32 bytes)",
+        name: "privKey",
+        kind: "string",
+        label: "My private key",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
         showWhen: "",
         showValue: 0,
         group: "",
-        action: "identity",
+        action: "keypair",
         widget: "",
         autoFill: "",
         secret: true,
       },
       {
-        name: "peerPublicKey",
-        kind: "hex",
-        label: "Peer Ed25519 public key (32 bytes)",
+        name: "peerPubKey",
+        kind: "string",
+        label: "Peer public key",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
@@ -1426,7 +1406,6 @@ export const OpMetas: OpMeta[] = [
       { name: "hasGPS", kind: "boolean", optional: false, label: "Has GPS" },
       { name: "lat", kind: "number", optional: true, label: "Latitude" },
       { name: "lon", kind: "number", optional: true, label: "Longitude" },
-      { name: "signature", kind: "string", optional: false, label: "Signature (hex)" },
       { name: "sigVerified", kind: "boolean", optional: false, label: "Signature verified" },
     ],
   },
@@ -1589,24 +1568,24 @@ export const OpMetas: OpMeta[] = [
         secret: false,
       },
       {
-        name: "identitySeed",
-        kind: "hex",
-        label: "Identity seed (32 bytes)",
+        name: "privKey",
+        kind: "string",
+        label: "My private key",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
         showWhen: "",
         showValue: 0,
         group: "",
-        action: "identity",
+        action: "keypair",
         widget: "",
         autoFill: "",
         secret: true,
       },
       {
-        name: "peerPublicKey",
-        kind: "hex",
-        label: "Peer Ed25519 public key (32 bytes)",
+        name: "peerPubKey",
+        kind: "string",
+        label: "Peer public key",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
@@ -1634,7 +1613,7 @@ export const OpMetas: OpMeta[] = [
     tabGroup: "",
     tabGroupLabel: "",
     tabGroupSub: "",
-    tabGroupDoc: "The encrypted reply to a REQ packet, addressed back to the requester and secured with the Ed25519 ECDH shared secret.",
+    tabGroupDoc: "The encrypted reply to a REQ packet, addressed back to the requester and secured with the same X25519 ECDH shared secret.",
     tabLabel: "",
     packetType: "RESPONSE",
     resultTypeName: "ResponsePayload",
@@ -1655,24 +1634,24 @@ export const OpMetas: OpMeta[] = [
         secret: false,
       },
       {
-        name: "identitySeed",
-        kind: "hex",
-        label: "Identity seed (32 bytes)",
+        name: "privKey",
+        kind: "string",
+        label: "My private key",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
         showWhen: "",
         showValue: 0,
         group: "",
-        action: "identity",
+        action: "keypair",
         widget: "",
         autoFill: "",
         secret: true,
       },
       {
-        name: "peerPublicKey",
-        kind: "hex",
-        label: "Peer Ed25519 public key (32 bytes)",
+        name: "peerPubKey",
+        kind: "string",
+        label: "Peer public key",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
@@ -1719,24 +1698,24 @@ export const OpMetas: OpMeta[] = [
         secret: false,
       },
       {
-        name: "identitySeed",
-        kind: "hex",
-        label: "Identity seed (32 bytes)",
+        name: "privKey",
+        kind: "string",
+        label: "My private key",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
         showWhen: "",
         showValue: 0,
         group: "",
-        action: "identity",
+        action: "keypair",
         widget: "",
         autoFill: "",
         secret: true,
       },
       {
-        name: "peerPublicKey",
-        kind: "hex",
-        label: "Peer Ed25519 public key (32 bytes)",
+        name: "peerPubKey",
+        kind: "string",
+        label: "Peer public key",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
@@ -1785,16 +1764,16 @@ export const OpMetas: OpMeta[] = [
         secret: false,
       },
       {
-        name: "identitySeed",
-        kind: "hex",
-        label: "Identity seed (32 bytes, recipient)",
+        name: "myPrivKey",
+        kind: "string",
+        label: "My private key (recipient)",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
         showWhen: "",
         showValue: 0,
         group: "",
-        action: "identity",
+        action: "keypair",
         widget: "",
         autoFill: "",
         secret: true,
@@ -1802,7 +1781,7 @@ export const OpMetas: OpMeta[] = [
     ],
     result: [
       { name: "destHash", kind: "string", optional: false, label: "Dest node hash" },
-      { name: "senderPubKey", kind: "string", optional: false, label: "Sender Ed25519 public key" },
+      { name: "senderPubKey", kind: "string", optional: false, label: "Sender public key" },
       { name: "timestamp", kind: "number", optional: false, label: "Timestamp" },
       { name: "dataHex", kind: "string", optional: false, label: "Data" },
     ],
@@ -1871,7 +1850,7 @@ export const OpMetas: OpMeta[] = [
         group: "",
         action: "",
         widget: "",
-        autoFill: "",
+        autoFill: "packetHex",
         secret: false,
       },
     ],
@@ -1923,146 +1902,21 @@ export const OpMetas: OpMeta[] = [
     ],
   },
   {
-    name: "encodeSignedAdvert",
-    category: "encode",
-    label: "Encode signed ADVERT",
-    tabGroup: "advert",
-    tabGroupLabel: "ADVERT",
-    tabGroupSub: "node advertisement",
-    tabGroupDoc: "A self-announcement broadcast so other nodes can discover this one. Carries the node's public key, name, type, and optional GPS position. The contents are public and not encrypted.",
-    tabLabel: "Signed",
-    packetType: "",
-    resultTypeName: "HexResult",
-    params: [
-      {
-        name: "seed",
-        kind: "hex",
-        label: "Identity seed (32 bytes)",
-        placeholder: "64 hex chars",
-        optional: false,
-        choices: [],
-        showWhen: "",
-        showValue: 0,
-        group: "",
-        action: "identity",
-        widget: "",
-        autoFill: "",
-        secret: false,
-      },
-      {
-        name: "name",
-        kind: "string",
-        label: "Node name",
-        placeholder: "Alice's node",
-        optional: false,
-        choices: [],
-        showWhen: "",
-        showValue: 0,
-        group: "",
-        action: "",
-        widget: "",
-        autoFill: "",
-        secret: false,
-      },
-      {
-        name: "hasGPS",
-        kind: "int",
-        label: "Include GPS coordinates",
-        placeholder: "",
-        optional: false,
-        choices: [],
-        showWhen: "",
-        showValue: 0,
-        group: "",
-        action: "",
-        widget: "checkbox",
-        autoFill: "",
-        secret: false,
-      },
-      {
-        name: "lat",
-        kind: "float",
-        label: "Latitude (°)",
-        placeholder: "51.5074",
-        optional: false,
-        choices: [],
-        showWhen: "hasGPS",
-        showValue: 1,
-        group: "gps",
-        action: "",
-        widget: "",
-        autoFill: "",
-        secret: false,
-      },
-      {
-        name: "lon",
-        kind: "float",
-        label: "Longitude (°)",
-        placeholder: "-0.1278",
-        optional: false,
-        choices: [],
-        showWhen: "hasGPS",
-        showValue: 1,
-        group: "gps",
-        action: "",
-        widget: "",
-        autoFill: "",
-        secret: false,
-      },
-    ],
-    result: [
-      { name: "hex", kind: "string", optional: false, label: "Hex packet" },
-    ],
-  },
-  {
-    name: "generateIdentity",
+    name: "generateKeypair",
     category: "key",
-    label: "Generate identity",
+    label: "Generate keypair",
     tabGroup: "",
     tabGroupLabel: "",
     tabGroupSub: "",
     tabGroupDoc: "",
     tabLabel: "",
     packetType: "",
-    resultTypeName: "IdentityResult",
+    resultTypeName: "KeypairResult",
     params: [
     ],
     result: [
-      { name: "seed", kind: "string", optional: false, label: "Identity seed (hex)" },
-      { name: "publicKey", kind: "string", optional: false, label: "Ed25519 public key (hex)" },
-    ],
-  },
-  {
-    name: "identityFromSeed",
-    category: "key",
-    label: "Derive identity from seed",
-    tabGroup: "",
-    tabGroupLabel: "",
-    tabGroupSub: "",
-    tabGroupDoc: "",
-    tabLabel: "",
-    packetType: "",
-    resultTypeName: "IdentityResult",
-    params: [
-      {
-        name: "seed",
-        kind: "hex",
-        label: "Identity seed (32 bytes)",
-        placeholder: "64 hex chars",
-        optional: false,
-        choices: [],
-        showWhen: "",
-        showValue: 0,
-        group: "",
-        action: "",
-        widget: "",
-        autoFill: "",
-        secret: true,
-      },
-    ],
-    result: [
-      { name: "seed", kind: "string", optional: false, label: "Identity seed (hex)" },
-      { name: "publicKey", kind: "string", optional: false, label: "Ed25519 public key (hex)" },
+      { name: "publicKey", kind: "string", optional: false, label: "Public key" },
+      { name: "privateKey", kind: "string", optional: false, label: "Private key" },
     ],
   },
   {
@@ -2098,7 +1952,7 @@ export const OpMetas: OpMeta[] = [
     ],
   },
   {
-    name: "identitySharedSecret",
+    name: "sharedSecret",
     category: "key",
     label: "Compute shared secret",
     tabGroup: "",
@@ -2107,12 +1961,12 @@ export const OpMetas: OpMeta[] = [
     tabGroupDoc: "",
     tabLabel: "",
     packetType: "",
-    resultTypeName: "IdentitySharedSecretResult",
+    resultTypeName: "SharedSecretResult",
     params: [
       {
-        name: "identitySeed",
-        kind: "hex",
-        label: "Identity seed (32 bytes)",
+        name: "privKey",
+        kind: "string",
+        label: "My private key",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
@@ -2125,9 +1979,9 @@ export const OpMetas: OpMeta[] = [
         secret: true,
       },
       {
-        name: "peerPublicKey",
-        kind: "hex",
-        label: "Peer Ed25519 public key (32 bytes)",
+        name: "peerPubKey",
+        kind: "string",
+        label: "Peer public key",
         placeholder: "64 hex chars",
         optional: false,
         choices: [],
