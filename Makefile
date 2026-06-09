@@ -99,9 +99,11 @@ release: check
 		echo "Tag $(VERSION) already exists"; \
 		exit 1; \
 	}
+	gofmt -w .
+	go mod tidy
 	cd $(JS_DIR) && npm version --no-git-tag-version "$$(echo '$(VERSION)' | sed 's/^v//')"
 	$(MAKE) js-check
-	git add $(JS_DIR)/package.json $(JS_DIR)/package-lock.json
+	git add -u
 	git commit -m "chore: release $(VERSION)"
 	git tag -a "$(VERSION)" -m "meshpkt $(VERSION)"
 	git push origin main "$(VERSION)"
