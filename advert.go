@@ -217,7 +217,7 @@ func SignAdvert(id Identity, adv Advert) (Advert, error) {
 	if err != nil {
 		return Advert{}, err
 	}
-	signed, err := SignAdvertPayload(payload, id.Seed[:])
+	signed, err := SignAdvertPayload(payload, id.PrivateKey[:])
 	if err != nil {
 		return Advert{}, err
 	}
@@ -285,38 +285,6 @@ func DecodeAdvertPayload(payload []byte) (Advert, error) {
 // DecodeAdvertPayloadStrict is an alias for DecodeAdvertPayload.
 func DecodeAdvertPayloadStrict(payload []byte) (Advert, error) {
 	return DecodeAdvertPayload(payload)
-}
-
-// SignedAdvertPacket is a one-step convenience builder that:
-//  1. sets adv.PublicKey from id.PublicKey;
-//  2. encodes the ADVERT payload;
-//  3. signs it with id.Sign (Ed25519, matching firmware);
-//  4. inserts the signature;
-//  5. wraps everything in a MeshCore ADVERT packet.
-//
-// Callers should not need to pass both a public key and signature manually.
-func SignedAdvertPacket(id Identity, adv Advert, opts ...Option) ([]byte, error) {
-	adv.PublicKey = id.PublicKey[:]
-
-	signed, err := SignAdvert(id, adv)
-	if err != nil {
-		return nil, err
-	}
-	payload, err := EncodeAdvertPayload(signed)
-	if err != nil {
-		return nil, err
-	}
-
-	o := &packetOptions{pathHashSize: defaultPathHashSize}
-	for _, opt := range opts {
-		opt(o)
-	}
-	return EncodePacket(Packet{
-		Route:        RouteFlood,
-		Type:         PayloadAdvert,
-		PathHashSize: o.pathHashSize,
-		Payload:      payload,
-	})
 }
 
 // parseAdvertAppdata fills in the optional appdata fields starting at offset 100.

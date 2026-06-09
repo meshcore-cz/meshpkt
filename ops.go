@@ -230,19 +230,15 @@ var Ops = []Op{
 		TabGroup:      "txtmsg",
 		TabGroupLabel: "TXT_MSG",
 		TabGroupSub:   "direct message",
-		TabGroupDoc:   "A private text message addressed to a single peer. Encrypted end-to-end with a shared secret derived from the sender's Ed25519 identity seed and the peer's Ed25519 public key.",
+		TabGroupDoc:   "A private text message addressed to a single peer. Encrypted end-to-end with a shared secret derived from your private key and the peer's public key via X25519 ECDH.",
 		Params: []Param{
-			{Name: "identitySeed", Kind: ParamHex, Label: "Identity seed (32 bytes)", Placeholder: "64 hex chars", Action: "identity", Secret: true},
-			{Name: "peerPublicKey", Kind: ParamHex, Label: "Peer Ed25519 public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "privKey", Kind: ParamString, Label: "My private key", Placeholder: "64 hex chars", Action: "keypair", Secret: true},
+			{Name: "peerPubKey", Kind: ParamString, Label: "Peer public key", Placeholder: "64 hex chars"},
 			{Name: "text", Kind: ParamString, Label: "Message", Placeholder: "Hello!", Widget: "textarea"},
 		},
 		Result: []ResultField{{Name: "hex", Kind: ResultString, Label: "Hex packet"}},
 		Run: func(args []any) (map[string]any, error) {
-			id, peerPub, err := argIdentityAndPeer(args, 0, 1)
-			if err != nil {
-				return nil, err
-			}
-			pkt, err := DirectTextPacketFromIdentity(id, peerPub, args[2].(string), time.Now())
+			pkt, err := DirectTextPacketFromKeys(args[0].(string), args[1].(string), args[2].(string), time.Now())
 			if err != nil {
 				return nil, err
 			}
@@ -259,13 +255,12 @@ var Ops = []Op{
 		TabGroupSub:   "node advertisement",
 		TabGroupDoc:   "A self-announcement broadcast so other nodes can discover this one. Carries the node's public key, name, type, and optional GPS position. The contents are public and not encrypted.",
 		Params: []Param{
-			{Name: "pubKey", Kind: ParamHex, Label: "Ed25519 public key (32 bytes)", Placeholder: "64 hex chars", Action: "identity-pub"},
+			{Name: "pubKey", Kind: ParamHex, Label: "Public key (32 bytes)", Placeholder: "64 hex chars", Action: "keypair-pub"},
 			{Name: "signature", Kind: ParamHex, Label: "Signature (optional, 64 bytes)", Placeholder: "leave empty for zeros", Optional: true},
 			{Name: "name", Kind: ParamString, Label: "Node name", Placeholder: "Alice's node"},
 			{Name: "hasGPS", Kind: ParamInt, Label: "Include GPS coordinates", Widget: "checkbox"},
 			{Name: "lat", Kind: ParamFloat, Label: "Latitude (°)", Placeholder: "51.5074", ShowWhen: "hasGPS", ShowValue: 1, Group: "gps"},
 			{Name: "lon", Kind: ParamFloat, Label: "Longitude (°)", Placeholder: "-0.1278", ShowWhen: "hasGPS", ShowValue: 1, Group: "gps"},
-			{Name: "timestamp", Kind: ParamInt, Label: "Timestamp (Unix sec, 0 = now)", Placeholder: "0", Optional: true},
 		},
 		Result:         []ResultField{{Name: "hex", Kind: ResultString, Label: "Hex packet"}},
 		ResultTypeName: "HexResult",
@@ -278,9 +273,6 @@ var Ops = []Op{
 				HasGPS:    args[3].(int) != 0,
 				Lat:       args[4].(float64),
 				Lon:       args[5].(float64),
-			}
-			if ts := args[6].(int); ts != 0 {
-				adv.Timestamp = time.Unix(int64(ts), 0)
 			}
 			payload, err := EncodeAdvertPayload(adv)
 			if err != nil {
@@ -330,21 +322,17 @@ var Ops = []Op{
 		TabGroup:      "req",
 		TabGroupLabel: "REQ",
 		TabGroupSub:   "request",
-		TabGroupDoc:   "An encrypted request sent to a known peer (e.g. login, get stats, keepalive). Uses Ed25519 identity ECDH for the shared secret.",
+		TabGroupDoc:   "An encrypted request sent to a known peer (e.g. login, get stats, keepalive). Uses X25519 ECDH shared-secret encryption with a request-type byte selecting the operation.",
 		Params: []Param{
-			{Name: "identitySeed", Kind: ParamHex, Label: "Identity seed (32 bytes)", Placeholder: "64 hex chars", Action: "identity", Secret: true},
-			{Name: "peerPublicKey", Kind: ParamHex, Label: "Peer Ed25519 public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "privKey", Kind: ParamString, Label: "My private key", Placeholder: "64 hex chars", Action: "keypair", Secret: true},
+			{Name: "peerPubKey", Kind: ParamString, Label: "Peer public key", Placeholder: "64 hex chars"},
 			{Name: "reqType", Kind: ParamInt, Label: "Request type", Choices: []Choice{{0, "Custom"}, {1, "Get stats"}, {2, "Keepalive"}, {3, "Clock+status"}}},
 			{Name: "data", Kind: ParamHex, Label: "Extra data (hex)", Optional: true, Widget: "textarea"},
 		},
 		Result:         []ResultField{{Name: "hex", Kind: ResultString, Label: "Hex packet"}},
 		ResultTypeName: "HexResult",
 		Run: func(args []any) (map[string]any, error) {
-			id, peerPub, err := argIdentityAndPeer(args, 0, 1)
-			if err != nil {
-				return nil, err
-			}
-			pkt, err := ReqPacketFromIdentity(id, peerPub, byte(args[2].(int)), args[3].([]byte))
+			pkt, err := ReqPacketFromKeys(args[0].(string), args[1].(string), byte(args[2].(int)), args[3].([]byte))
 			if err != nil {
 				return nil, err
 			}
@@ -359,20 +347,16 @@ var Ops = []Op{
 		TabGroup:      "anonreq",
 		TabGroupLabel: "ANON_REQ",
 		TabGroupSub:   "anonymous request",
-		TabGroupDoc:   "A first-contact request from a sender the recipient doesn't yet know. The sender's Ed25519 public key is embedded so the recipient can derive the shared ECDH secret — used when initially connecting to a repeater or room server.",
+		TabGroupDoc:   "A first-contact request from a sender the recipient doesn't yet know. The sender's ephemeral public key is embedded so the recipient can derive the shared ECDH secret — used when initially connecting to a repeater or room server.",
 		Params: []Param{
-			{Name: "destPublicKey", Kind: ParamHex, Label: "Destination Ed25519 public key (32 bytes)", Placeholder: "64 hex chars"},
-			{Name: "identitySeed", Kind: ParamHex, Label: "My identity seed (32 bytes)", Placeholder: "64 hex chars", Action: "identity", Secret: true},
+			{Name: "destPubKey", Kind: ParamHex, Label: "Destination public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "myPrivKey", Kind: ParamString, Label: "My private key", Placeholder: "64 hex chars", Action: "keypair", Secret: true},
 			{Name: "data", Kind: ParamHex, Label: "Request body (hex)", Optional: true, Widget: "textarea"},
 		},
 		Result:         []ResultField{{Name: "hex", Kind: ResultString, Label: "Hex packet"}},
 		ResultTypeName: "HexResult",
 		Run: func(args []any) (map[string]any, error) {
-			id, destPub, err := argIdentityAndPeer(args, 1, 0)
-			if err != nil {
-				return nil, err
-			}
-			pkt, err := AnonReqPacket(destPub, id, args[2].([]byte))
+			pkt, err := AnonReqPacket(args[0].([]byte), args[1].(string), args[2].([]byte))
 			if err != nil {
 				return nil, err
 			}
@@ -606,8 +590,8 @@ var Ops = []Op{
 		PacketType: "TXT_MSG",
 		Params: []Param{
 			{Name: "payload", Kind: ParamHex, AutoFill: "payloadHex"},
-			{Name: "identitySeed", Kind: ParamHex, Label: "Identity seed (32 bytes)", Placeholder: "64 hex chars", Action: "identity", Secret: true},
-			{Name: "peerPublicKey", Kind: ParamHex, Label: "Peer Ed25519 public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "privKey", Kind: ParamString, Label: "My private key", Placeholder: "64 hex chars", Action: "keypair", Secret: true},
+			{Name: "peerPubKey", Kind: ParamString, Label: "Peer public key", Placeholder: "64 hex chars"},
 		},
 		Result: []ResultField{
 			{Name: "destHash", Kind: ResultString, Label: "Dest node hash"},
@@ -619,11 +603,7 @@ var Ops = []Op{
 		},
 		ResultTypeName: "DirectTextPayload",
 		Run: func(args []any) (map[string]any, error) {
-			id, peerPub, err := argIdentityAndPeer(args, 1, 2)
-			if err != nil {
-				return nil, err
-			}
-			dt, err := DecodeDirectTextPayloadWithIdentity(args[0].([]byte), id, peerPub)
+			dt, err := DecodeDirectTextPayloadFromKeys(args[0].([]byte), args[1].(string), args[2].(string))
 			if err != nil {
 				return nil, err
 			}
@@ -655,7 +635,6 @@ var Ops = []Op{
 			{Name: "hasGPS", Kind: ResultBool, Label: "Has GPS"},
 			{Name: "lat", Kind: ResultNumber, Optional: true, Label: "Latitude"},
 			{Name: "lon", Kind: ResultNumber, Optional: true, Label: "Longitude"},
-			{Name: "signature", Kind: ResultString, Label: "Signature (hex)"},
 			{Name: "sigVerified", Kind: ResultBool, Label: "Signature verified"},
 		},
 		ResultTypeName: "AdvertPayload",
@@ -671,7 +650,6 @@ var Ops = []Op{
 				"name":        adv.Name,
 				"nodeType":    int(adv.NodeType),
 				"hasGPS":      adv.HasGPS,
-				"signature":   hex.EncodeToString(adv.Signature),
 				"sigVerified": !allZero(adv.Signature), // true = non-zero sig that passed verification
 			}
 			if adv.HasGPS {
@@ -769,8 +747,8 @@ var Ops = []Op{
 		PacketType: "REQ",
 		Params: []Param{
 			{Name: "payload", Kind: ParamHex, AutoFill: "payloadHex"},
-			{Name: "identitySeed", Kind: ParamHex, Label: "Identity seed (32 bytes)", Placeholder: "64 hex chars", Action: "identity", Secret: true},
-			{Name: "peerPublicKey", Kind: ParamHex, Label: "Peer Ed25519 public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "privKey", Kind: ParamString, Label: "My private key", Placeholder: "64 hex chars", Action: "keypair", Secret: true},
+			{Name: "peerPubKey", Kind: ParamString, Label: "Peer public key", Placeholder: "64 hex chars"},
 		},
 		Result: []ResultField{
 			{Name: "destHash", Kind: ResultString, Label: "Dest node hash"},
@@ -781,11 +759,7 @@ var Ops = []Op{
 		},
 		ResultTypeName: "ReqPayload",
 		Run: func(args []any) (map[string]any, error) {
-			id, peerPub, err := argIdentityAndPeer(args, 1, 2)
-			if err != nil {
-				return nil, err
-			}
-			r, err := DecodeReqPayloadWithIdentity(args[0].([]byte), id, peerPub)
+			r, err := DecodeReqPayloadFromKeys(args[0].([]byte), args[1].(string), args[2].(string))
 			if err != nil {
 				return nil, err
 			}
@@ -804,11 +778,11 @@ var Ops = []Op{
 		Category:    "decode",
 		Label:       "Decrypt RESPONSE",
 		PacketType:  "RESPONSE",
-		TabGroupDoc: "The encrypted reply to a REQ packet, addressed back to the requester and secured with the Ed25519 ECDH shared secret.",
+		TabGroupDoc: "The encrypted reply to a REQ packet, addressed back to the requester and secured with the same X25519 ECDH shared secret.",
 		Params: []Param{
 			{Name: "payload", Kind: ParamHex, AutoFill: "payloadHex"},
-			{Name: "identitySeed", Kind: ParamHex, Label: "Identity seed (32 bytes)", Placeholder: "64 hex chars", Action: "identity", Secret: true},
-			{Name: "peerPublicKey", Kind: ParamHex, Label: "Peer Ed25519 public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "privKey", Kind: ParamString, Label: "My private key", Placeholder: "64 hex chars", Action: "keypair", Secret: true},
+			{Name: "peerPubKey", Kind: ParamString, Label: "Peer public key", Placeholder: "64 hex chars"},
 		},
 		Result: []ResultField{
 			{Name: "destHash", Kind: ResultString, Label: "Dest node hash"},
@@ -817,11 +791,7 @@ var Ops = []Op{
 		},
 		ResultTypeName: "ResponsePayload",
 		Run: func(args []any) (map[string]any, error) {
-			id, peerPub, err := argIdentityAndPeer(args, 1, 2)
-			if err != nil {
-				return nil, err
-			}
-			r, err := DecodeResponsePayloadWithIdentity(args[0].([]byte), id, peerPub)
+			r, err := DecodeResponsePayloadFromKeys(args[0].([]byte), args[1].(string), args[2].(string))
 			if err != nil {
 				return nil, err
 			}
@@ -841,8 +811,8 @@ var Ops = []Op{
 		TabGroupDoc: "Carries a discovered route — the ordered list of hop hashes — back toward a peer, optionally with an extra piggy-backed payload. Used to establish return paths through the mesh.",
 		Params: []Param{
 			{Name: "payload", Kind: ParamHex, AutoFill: "payloadHex"},
-			{Name: "identitySeed", Kind: ParamHex, Label: "Identity seed (32 bytes)", Placeholder: "64 hex chars", Action: "identity", Secret: true},
-			{Name: "peerPublicKey", Kind: ParamHex, Label: "Peer Ed25519 public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "privKey", Kind: ParamString, Label: "My private key", Placeholder: "64 hex chars", Action: "keypair", Secret: true},
+			{Name: "peerPubKey", Kind: ParamString, Label: "Peer public key", Placeholder: "64 hex chars"},
 		},
 		Result: []ResultField{
 			{Name: "destHash", Kind: ResultString, Label: "Dest node hash"},
@@ -853,11 +823,7 @@ var Ops = []Op{
 		},
 		ResultTypeName: "PathPayload",
 		Run: func(args []any) (map[string]any, error) {
-			id, peerPub, err := argIdentityAndPeer(args, 1, 2)
-			if err != nil {
-				return nil, err
-			}
-			p, err := DecodePathPayloadWithIdentity(args[0].([]byte), id, peerPub)
+			p, err := DecodePathPayloadFromKeys(args[0].([]byte), args[1].(string), args[2].(string))
 			if err != nil {
 				return nil, err
 			}
@@ -883,21 +849,17 @@ var Ops = []Op{
 		PacketType: "ANON_REQ",
 		Params: []Param{
 			{Name: "payload", Kind: ParamHex, AutoFill: "payloadHex"},
-			{Name: "identitySeed", Kind: ParamHex, Label: "Identity seed (32 bytes, recipient)", Placeholder: "64 hex chars", Action: "identity", Secret: true},
+			{Name: "myPrivKey", Kind: ParamString, Label: "My private key (recipient)", Placeholder: "64 hex chars", Action: "keypair", Secret: true},
 		},
 		Result: []ResultField{
 			{Name: "destHash", Kind: ResultString, Label: "Dest node hash"},
-			{Name: "senderPubKey", Kind: ResultString, Label: "Sender Ed25519 public key"},
+			{Name: "senderPubKey", Kind: ResultString, Label: "Sender public key"},
 			{Name: "timestamp", Kind: ResultNumber, Label: "Timestamp"},
 			{Name: "dataHex", Kind: ResultString, Label: "Data"},
 		},
 		ResultTypeName: "AnonReqPayload",
 		Run: func(args []any) (map[string]any, error) {
-			id, err := seedBytesToIdentity(args[1].([]byte))
-			if err != nil {
-				return nil, err
-			}
-			a, err := DecodeAnonReqPayload(args[0].([]byte), id)
+			a, err := DecodeAnonReqPayload(args[0].([]byte), args[1].(string))
 			if err != nil {
 				return nil, err
 			}
@@ -963,7 +925,7 @@ var Ops = []Op{
 		Label:      "Decode TRACE packet",
 		PacketType: "TRACE",
 		Params: []Param{
-			{Name: "packet", Kind: ParamHex, Label: "Full packet hex (SNR bytes are in the path field)"},
+			{Name: "packet", Kind: ParamHex, AutoFill: "packetHex", Label: "Full packet hex (SNR bytes are in the path field)"},
 		},
 		Result: []ResultField{
 			{Name: "tag", Kind: ResultNumber, Label: "Tag"},
@@ -1041,80 +1003,21 @@ var Ops = []Op{
 	// ── utilities ─────────────────────────────────────────────────────────────
 
 	{
-		Name:          "encodeSignedAdvert",
-		Category:      "encode",
-		Label:         "Encode signed ADVERT",
-		TabGroup:      "advert",
-		TabGroupLabel: "ADVERT",
-		TabGroupSub:   "node advertisement",
-		TabGroupDoc:   "A self-announcement broadcast so other nodes can discover this one. Carries the node's public key, name, type, and optional GPS position. The contents are public and not encrypted.",
-		TabLabel:      "Signed",
-		Params: []Param{
-			{Name: "seed", Kind: ParamHex, Label: "Identity seed (32 bytes)", Placeholder: "64 hex chars", Action: "identity"},
-			{Name: "name", Kind: ParamString, Label: "Node name", Placeholder: "Alice's node"},
-			{Name: "hasGPS", Kind: ParamInt, Label: "Include GPS coordinates", Widget: "checkbox"},
-			{Name: "lat", Kind: ParamFloat, Label: "Latitude (°)", Placeholder: "51.5074", ShowWhen: "hasGPS", ShowValue: 1, Group: "gps"},
-			{Name: "lon", Kind: ParamFloat, Label: "Longitude (°)", Placeholder: "-0.1278", ShowWhen: "hasGPS", ShowValue: 1, Group: "gps"},
-		},
-		Result:         []ResultField{{Name: "hex", Kind: ResultString, Label: "Hex packet"}},
-		ResultTypeName: "HexResult",
-		Run: func(args []any) (map[string]any, error) {
-			id, err := seedBytesToIdentity(args[0].([]byte))
-			if err != nil {
-				return nil, err
-			}
-			adv := Advert{
-				Name:     args[1].(string),
-				NodeType: AdvertNodeChat,
-				HasGPS:   args[2].(int) != 0,
-				Lat:      args[3].(float64),
-				Lon:      args[4].(float64),
-			}
-			raw, err := SignedAdvertPacket(id, adv)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]any{"hex": hex.EncodeToString(raw)}, nil
-		},
-	},
-
-	{
-		Name:     "generateIdentity",
+		Name:     "generateKeypair",
 		Category: "key",
-		Label:    "Generate identity",
+		Label:    "Generate keypair",
 		Params:   []Param{},
 		Result: []ResultField{
-			{Name: "seed", Kind: ResultString, Label: "Identity seed (hex)"},
-			{Name: "publicKey", Kind: ResultString, Label: "Ed25519 public key (hex)"},
+			{Name: "publicKey", Kind: ResultString, Label: "Public key"},
+			{Name: "privateKey", Kind: ResultString, Label: "Private key"},
 		},
-		ResultTypeName: "IdentityResult",
+		ResultTypeName: "KeypairResult",
 		Run: func(args []any) (map[string]any, error) {
-			id, err := GenerateIdentity()
+			kp, err := Generate()
 			if err != nil {
 				return nil, err
 			}
-			return map[string]any{"seed": id.SeedHex(), "publicKey": id.PublicKeyHex()}, nil
-		},
-	},
-
-	{
-		Name:     "identityFromSeed",
-		Category: "key",
-		Label:    "Derive identity from seed",
-		Params: []Param{
-			{Name: "seed", Kind: ParamHex, Label: "Identity seed (32 bytes)", Placeholder: "64 hex chars", Secret: true},
-		},
-		Result: []ResultField{
-			{Name: "seed", Kind: ResultString, Label: "Identity seed (hex)"},
-			{Name: "publicKey", Kind: ResultString, Label: "Ed25519 public key (hex)"},
-		},
-		ResultTypeName: "IdentityResult",
-		Run: func(args []any) (map[string]any, error) {
-			id, err := seedBytesToIdentity(args[0].([]byte))
-			if err != nil {
-				return nil, err
-			}
-			return map[string]any{"seed": id.SeedHex(), "publicKey": id.PublicKeyHex()}, nil
+			return map[string]any{"publicKey": kp.PublicKey, "privateKey": kp.PrivateKey}, nil
 		},
 	},
 
@@ -1132,57 +1035,22 @@ var Ops = []Op{
 	},
 
 	{
-		Name:     "identitySharedSecret",
+		Name:     "sharedSecret",
 		Category: "key",
 		Label:    "Compute shared secret",
 		Params: []Param{
-			{Name: "identitySeed", Kind: ParamHex, Label: "Identity seed (32 bytes)", Placeholder: "64 hex chars", Secret: true},
-			{Name: "peerPublicKey", Kind: ParamHex, Label: "Peer Ed25519 public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "privKey", Kind: ParamString, Label: "My private key", Placeholder: "64 hex chars", Secret: true},
+			{Name: "peerPubKey", Kind: ParamString, Label: "Peer public key", Placeholder: "64 hex chars"},
 		},
 		Result: []ResultField{{Name: "hex", Kind: ResultString, Label: "Shared secret (hex)"}},
 		Run: func(args []any) (map[string]any, error) {
-			id, peerPub, err := argIdentityAndPeer(args, 0, 1)
+			shared, err := SharedSecret(args[0].(string), args[1].(string))
 			if err != nil {
 				return nil, err
 			}
-			shared, err := id.SharedSecret(peerPub)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]any{"hex": hex.EncodeToString(shared[:])}, nil
+			return map[string]any{"hex": hex.EncodeToString(shared)}, nil
 		},
 	},
-}
-
-// seedBytesToIdentity restores an Identity from a 32-byte seed slice.
-func seedBytesToIdentity(b []byte) (Identity, error) {
-	if len(b) != 32 {
-		return Identity{}, fmt.Errorf("meshpkt: identity seed must be 32 bytes, got %d", len(b))
-	}
-	return IdentityFromSeed([32]byte(b))
-}
-
-// pubKeyBytes converts a 32-byte slice to a [32]byte Ed25519 public key.
-func pubKeyBytes(b []byte) ([32]byte, error) {
-	if len(b) != 32 {
-		return [32]byte{}, fmt.Errorf("meshpkt: Ed25519 public key must be 32 bytes, got %d", len(b))
-	}
-	return [32]byte(b), nil
-}
-
-// argIdentityAndPeer extracts an Identity (from args[seedIdx]) and a peer
-// Ed25519 public key (from args[peerIdx]) in a single call, returning the
-// first error encountered.
-func argIdentityAndPeer(args []any, seedIdx, peerIdx int) (Identity, [32]byte, error) {
-	id, err := seedBytesToIdentity(args[seedIdx].([]byte))
-	if err != nil {
-		return Identity{}, [32]byte{}, err
-	}
-	peer, err := pubKeyBytes(args[peerIdx].([]byte))
-	if err != nil {
-		return Identity{}, [32]byte{}, err
-	}
-	return id, peer, nil
 }
 
 // opGrpDataResult builds the result map for a decoded GRP_DATA payload.
