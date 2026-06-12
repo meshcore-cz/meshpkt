@@ -1,10 +1,16 @@
 .PHONY: help fmt fmt-check tidy-check vet test check \
 	js-install js-generate js-generate-check js-wasm js-build js-pack js-check \
+	android-init android-aar \
 	release npm-publish cli-install
 
 VERSION ?=
 TINYGO ?= tinygo
+GOMOBILE ?= $(shell go env GOPATH)/bin/gomobile
+ANDROID_API ?= 26
 JS_DIR := js
+ANDROID_DIR := dist/android
+ANDROID_AAR := $(ANDROID_DIR)/meshpkt.aar
+GOMOBILE_BIN_DIR := $(dir $(GOMOBILE))
 
 help:
 	@echo "Available targets:"
@@ -13,6 +19,8 @@ help:
 	@echo "  make cli-install               Install meshpkt-cli to GOPATH/bin"
 	@echo "  make js-build                  Build npm package and WASM module"
 	@echo "  make js-check                  Build and validate npm package"
+	@echo "  make android-init              Install and initialize gomobile"
+	@echo "  make android-aar               Build Android AAR library"
 	@echo "  make release VERSION=v0.1.0    Create and push a release tag"
 	@echo "  make npm-publish               Build and publish the npm package"
 
@@ -72,6 +80,21 @@ js-pack: js-build
 js-check: js-build
 	git diff --exit-code -- $(JS_DIR)/src/wasm.gen.ts
 	cd $(JS_DIR) && npm pack --dry-run
+
+android-init:
+	go get -tool golang.org/x/mobile/cmd/gobind
+	go install golang.org/x/mobile/cmd/gomobile@latest
+	PATH="$(GOMOBILE_BIN_DIR):$$PATH" $(GOMOBILE) init
+
+android-aar:
+	mkdir -p $(ANDROID_DIR)
+	PATH="$(GOMOBILE_BIN_DIR):$$PATH" $(GOMOBILE) bind \
+		-target=android \
+		-androidapi $(ANDROID_API) \
+		-javapkg cz.meshcore.meshpkt \
+		-ldflags="-s -w" \
+		-o $(ANDROID_AAR) \
+		./mobile
 
 release: check
 	@test -n "$(VERSION)" || { \
