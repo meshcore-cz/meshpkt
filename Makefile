@@ -92,7 +92,7 @@ android-aar:
 		-target=android \
 		-androidapi $(ANDROID_API) \
 		-javapkg cz.meshcore.meshpkt \
-		-ldflags="-s -w" \
+		-ldflags="-s -w -extldflags=-Wl,-z,max-page-size=16384" \
 		-o $(ANDROID_AAR) \
 		./mobile
 
