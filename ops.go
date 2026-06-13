@@ -316,6 +316,31 @@ var Ops = []Op{
 	},
 
 	{
+		Name:          "encodeTextAck",
+		Category:      "encode",
+		Label:         "Encode TXT_MSG ACK",
+		TabGroup:      "ack",
+		TabGroupLabel: "ACK",
+		TabGroupSub:   "acknowledge a direct message",
+		TabGroupDoc:   "Builds the ACK packet a recipient returns for a received direct text message (TXT_MSG). The CRC is derived from the message's timestamp, attempt, text, and the sender's public key — exactly as MeshCore firmware computes the expected ACK.",
+		Params: []Param{
+			{Name: "timestamp", Kind: ParamInt, Label: "Message timestamp (epoch seconds)", Placeholder: "0"},
+			{Name: "attempt", Kind: ParamInt, Label: "Attempt (0–3)", Placeholder: "0"},
+			{Name: "text", Kind: ParamString, Label: "Message text", Placeholder: "Hello!", Widget: "textarea"},
+			{Name: "senderPubKey", Kind: ParamHex, Label: "Sender public key (32 bytes)", Placeholder: "64 hex chars"},
+		},
+		Result:         []ResultField{{Name: "hex", Kind: ResultString, Label: "Hex packet"}},
+		ResultTypeName: "HexResult",
+		Run: func(args []any) (map[string]any, error) {
+			pkt, err := TextAckPacket(uint32(args[0].(int)), byte(args[1].(int)), args[2].(string), args[3].([]byte))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"hex": hex.EncodeToString(pkt)}, nil
+		},
+	},
+
+	{
 		Name:          "encodeReq",
 		Category:      "encode",
 		Label:         "Encode request",
