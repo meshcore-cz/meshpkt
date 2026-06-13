@@ -934,6 +934,48 @@ func TestTextAckCRC(t *testing.T) {
 	}
 }
 
+func TestDirectTextPacketFromIdentity(t *testing.T) {
+	var ss, rs [32]byte
+	for i := 0; i < 32; i++ {
+		ss[i] = byte(i)
+		rs[i] = byte(0x20 + i)
+	}
+	sender, _ := IdentityFromSeed(ss)
+	recip, _ := IdentityFromSeed(rs)
+
+	raw, err := DirectTextPacketFromIdentity(ss, recip.PublicKey, "bridged dm test", time.Unix(1700000000, 0), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkt, err := DecodePacket(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkt.Type != PayloadTxtMsg || pkt.Route != RouteFlood {
+		t.Fatalf("type=%v route=%v, want TXT_MSG/FLOOD", pkt.Type, pkt.Route)
+	}
+	if pkt.Payload[0] != recip.PublicKey[0] || pkt.Payload[1] != sender.PublicKey[0] {
+		t.Fatalf("dest/src hash = %02x/%02x, want %02x/%02x",
+			pkt.Payload[0], pkt.Payload[1], recip.PublicKey[0], sender.PublicKey[0])
+	}
+
+	// The recipient derives the same firmware-compatible shared secret and decrypts it.
+	shared, err := recip.SharedSecret(sender.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dt, err := DecodeDirectTextPayload(shared[:cipherKeySize], pkt.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dt.Text != "bridged dm test" {
+		t.Fatalf("text = %q, want %q", dt.Text, "bridged dm test")
+	}
+	if dt.Timestamp.Unix() != 1700000000 {
+		t.Fatalf("ts = %d, want 1700000000", dt.Timestamp.Unix())
+	}
+}
+
 // ── MULTIPART ─────────────────────────────────────────────────────────────────
 
 func TestMultipartAckPacket_RoundTrip(t *testing.T) {
