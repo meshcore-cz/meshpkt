@@ -94,6 +94,23 @@ func DirectTextPacketFromKeys(privHex, peerPubHex, text string, ts time.Time, op
 	return DirectTextPacket(shared[:cipherKeySize], peerPub[0], myPub[0], text, ts, 0, 0, opts...)
 }
 
+// DirectTextPacketFromIdentity builds a flooded TXT_MSG packet addressed to peerPub, encrypted with
+// the FIRMWARE-COMPATIBLE shared secret derived from our Ed25519 identity (Identity.SharedSecret:
+// SHA-512(seed)[:32] clamp → ed→Montgomery → X25519). Unlike DirectTextPacketFromKeys (which uses
+// the legacy native-X25519 keypair path), this interoperates with real MeshCore nodes. dest/src
+// hashes are the first byte of the recipient's and our public keys.
+func DirectTextPacketFromIdentity(seed [32]byte, peerPub [32]byte, text string, ts time.Time, attempt byte, opts ...Option) ([]byte, error) {
+	id, err := IdentityFromSeed(seed)
+	if err != nil {
+		return nil, fmt.Errorf("meshpkt: identity from seed: %w", err)
+	}
+	shared, err := id.SharedSecret(peerPub)
+	if err != nil {
+		return nil, err
+	}
+	return DirectTextPacket(shared[:cipherKeySize], peerPub[0], id.PublicKey[0], text, ts, 0, attempt, opts...)
+}
+
 // DecodeDirectTextPayloadFromKeys performs X25519 ECDH using privHex and
 // peerPubHex to recover the shared secret, then decodes the TXT_MSG payload.
 func DecodeDirectTextPayloadFromKeys(payload []byte, privHex, peerPubHex string) (DirectText, error) {

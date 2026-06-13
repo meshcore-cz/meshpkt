@@ -247,6 +247,43 @@ var Ops = []Op{
 	},
 
 	{
+		Name:          "encodeDirectTextIdentity",
+		Category:      "encode",
+		Label:         "Encode direct message (identity)",
+		TabGroup:      "txtmsg",
+		TabGroupLabel: "TXT_MSG",
+		TabGroupSub:   "direct message (firmware identity)",
+		TabGroupDoc:   "A private text message addressed to a single peer, encrypted with the firmware-compatible shared secret derived from your Ed25519 identity seed and the peer's public key. Interoperates with real MeshCore nodes (unlike the legacy keypair encoder).",
+		Params: []Param{
+			{Name: "seed", Kind: ParamHex, Label: "My identity seed (32 bytes)", Placeholder: "64 hex chars", Secret: true},
+			{Name: "peerPubKey", Kind: ParamHex, Label: "Peer public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "text", Kind: ParamString, Label: "Message", Placeholder: "Hello!", Widget: "textarea"},
+			{Name: "timestamp", Kind: ParamInt, Label: "Timestamp (epoch seconds)", Placeholder: "0"},
+			{Name: "attempt", Kind: ParamInt, Label: "Attempt (0–3)", Placeholder: "0"},
+		},
+		Result:         []ResultField{{Name: "hex", Kind: ResultString, Label: "Hex packet"}},
+		ResultTypeName: "HexResult",
+		Run: func(args []any) (map[string]any, error) {
+			seedB := args[0].([]byte)
+			peerB := args[1].([]byte)
+			if len(seedB) != 32 {
+				return nil, fmt.Errorf("meshpkt: seed must be 32 bytes, got %d", len(seedB))
+			}
+			if len(peerB) != 32 {
+				return nil, fmt.Errorf("meshpkt: peer public key must be 32 bytes, got %d", len(peerB))
+			}
+			var seed, peer [32]byte
+			copy(seed[:], seedB)
+			copy(peer[:], peerB)
+			pkt, err := DirectTextPacketFromIdentity(seed, peer, args[2].(string), time.Unix(int64(args[3].(int)), 0), byte(args[4].(int)))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"hex": hex.EncodeToString(pkt)}, nil
+		},
+	},
+
+	{
 		Name:          "encodeAdvert",
 		Category:      "encode",
 		Label:         "Encode ADVERT",
@@ -493,6 +530,25 @@ var Ops = []Op{
 	},
 
 	// ── decoders ──────────────────────────────────────────────────────────────
+
+	{
+		Name:     "computeContentHash",
+		Category: "decode",
+		Label:    "Compute content hash",
+		// No TabGroup/PacketType — a generic route-independent identifier for any packet.
+		Params: []Param{
+			{Name: "packet", Kind: ParamHex, Label: "Raw OTA packet (hex)", Placeholder: "hex bytes"},
+		},
+		Result:         []ResultField{{Name: "hash", Kind: ResultString, Label: "Content hash (16 hex)"}},
+		ResultTypeName: "ContentHashResult",
+		Run: func(args []any) (map[string]any, error) {
+			short, err := DecodeContentHash(args[0].([]byte))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"hash": hex.EncodeToString(short[:])}, nil
+		},
+	},
 
 	{
 		Name:     "decodeEnvelope",
