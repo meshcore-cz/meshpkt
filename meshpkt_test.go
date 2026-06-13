@@ -874,6 +874,66 @@ func TestTracePayload_HashWidth(t *testing.T) {
 	}
 }
 
+// ── TXT_MSG ACK ───────────────────────────────────────────────────────────────
+
+func TestTextAckCRC(t *testing.T) {
+	// Mirrors MeshCore firmware BaseChatMesh::composeMsgPacket:
+	//   sha256( timestamp[4 LE] | (attempt&3) | text | senderPubKey[32] )[0:4] as LE uint32.
+	ts := uint32(1700000000)
+	attempt := byte(0)
+	text := "direct hello"
+	pub := make([]byte, 32)
+	for i := range pub {
+		pub[i] = byte(i)
+	}
+
+	// Independent reference computation.
+	temp := make([]byte, 0, 5+len(text))
+	var tsb [4]byte
+	binary.LittleEndian.PutUint32(tsb[:], ts)
+	temp = append(temp, tsb[:]...)
+	temp = append(temp, attempt&0x03)
+	temp = append(temp, text...)
+	h := sha256.Sum256(append(append([]byte{}, temp...), pub...))
+	want := binary.LittleEndian.Uint32(h[:4])
+
+	if got := TextAckCRC(ts, attempt, text, pub); got != want {
+		t.Fatalf("TextAckCRC = %08x, want %08x", got, want)
+	}
+
+	// Only the low 2 bits of attempt are part of the CRC.
+	if TextAckCRC(ts, 0, text, pub) != TextAckCRC(ts, 0x04, text, pub) {
+		t.Errorf("attempt high bits must not affect the CRC")
+	}
+
+	// TextAckPacket round-trips the CRC through a real ACK packet.
+	raw, err := TextAckPacket(ts, attempt, text, pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkt, err := DecodePacket(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkt.Type != PayloadAck {
+		t.Fatalf("Type = %v, want ACK", pkt.Type)
+	}
+	if pkt.Route != RouteFlood {
+		t.Fatalf("Route = %v, want FLOOD", pkt.Route)
+	}
+	gotCRC, err := DecodeAckPayload(pkt.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotCRC != want {
+		t.Errorf("ACK packet CRC = %08x, want %08x", gotCRC, want)
+	}
+
+	if _, err := TextAckPacket(ts, attempt, text, pub[:31]); err == nil {
+		t.Errorf("expected error for short sender public key")
+	}
+}
+
 // ── MULTIPART ─────────────────────────────────────────────────────────────────
 
 func TestMultipartAckPacket_RoundTrip(t *testing.T) {
