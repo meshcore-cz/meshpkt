@@ -423,6 +423,48 @@ var Ops = []Op{
 	},
 
 	{
+		Name:          "encodePathTextAckIdentity",
+		Category:      "encode",
+		Label:         "Encode PATH + TXT_MSG ACK",
+		TabGroup:      "ack",
+		TabGroupLabel: "ACK",
+		TabGroupSub:   "return path + acknowledge flood direct message",
+		TabGroupDoc:   "Builds the MeshCore-compatible reply to a FLOOD-routed TXT_MSG: a PATH return packet with an embedded ACK extra.",
+		Params: []Param{
+			{Name: "seed", Kind: ParamHex, Label: "My identity seed (32 bytes)", Placeholder: "64 hex chars", Secret: true},
+			{Name: "peerPubKey", Kind: ParamHex, Label: "Peer public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "timestamp", Kind: ParamInt, Label: "Message timestamp (epoch seconds)", Placeholder: "0"},
+			{Name: "attempt", Kind: ParamInt, Label: "Attempt (0–3)", Placeholder: "0"},
+			{Name: "text", Kind: ParamString, Label: "Message text", Placeholder: "Hello!", Widget: "textarea"},
+			{Name: "path", Kind: ParamHex, Label: "Inbound flood path", Optional: true, Placeholder: "path hex"},
+			{Name: "pathHashSize", Kind: ParamInt, Label: "Path hash size", Choices: hashSizeChoices},
+		},
+		Result:         []ResultField{{Name: "hex", Kind: ResultString, Label: "Hex packet"}},
+		ResultTypeName: "HexResult",
+		Run: func(args []any) (map[string]any, error) {
+			seedB := args[0].([]byte)
+			peerB := args[1].([]byte)
+			if len(seedB) != 32 {
+				return nil, fmt.Errorf("meshpkt: seed must be 32 bytes, got %d", len(seedB))
+			}
+			if len(peerB) != 32 {
+				return nil, fmt.Errorf("meshpkt: peer public key must be 32 bytes, got %d", len(peerB))
+			}
+			var seed, peer [32]byte
+			copy(seed[:], seedB)
+			copy(peer[:], peerB)
+			pkt, err := PathTextAckReturnPacketFromIdentity(
+				seed, peer, uint32(args[2].(int)), byte(args[3].(int)), args[4].(string), args[5].([]byte),
+				WithPathHashSize(args[6].(int)),
+			)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"hex": hex.EncodeToString(pkt)}, nil
+		},
+	},
+
+	{
 		Name:          "encodeReq",
 		Category:      "encode",
 		Label:         "Encode request",

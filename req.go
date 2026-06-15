@@ -1,6 +1,7 @@
 package meshpkt
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"time"
@@ -239,4 +240,68 @@ func DecodePathPayloadFromKeys(payload []byte, privHex, peerPubHex string) (Retu
 		return ReturnedPath{}, err
 	}
 	return DecodePathPayload(shared, payload)
+}
+
+// PathReturnPacket builds a FLOOD-routed PATH packet returning [path] to the original sender.
+// When extra is non-empty it is embedded as [extraType]; MeshCore uses this to combine
+// "here is the path back to me" with the ACK for a FLOOD-routed TXT_MSG.
+func PathReturnPacket(shared16 []byte, destHash, srcHash byte, path []byte, extraType byte, extra []byte, opts ...Option) ([]byte, error) {
+	o := &packetOptions{pathHashSize: defaultPathHashSize}
+	for _, opt := range opts {
+		opt(o)
+	}
+	if o.pathHashSize < 1 || o.pathHashSize > 3 {
+		return nil, fmt.Errorf("meshpkt: unsupported path hash size %d (use 1–3)", o.pathHashSize)
+	}
+	if len(path)%o.pathHashSize != 0 {
+		return nil, ErrUnalignedPath
+	}
+	hashCount := len(path) / o.pathHashSize
+	if hashCount > MaxHopCount {
+		return nil, ErrTooManyHops
+	}
+	if len(path) > MaxPathBytes {
+		return nil, ErrPathTooLong
+	}
+	pathLen := byte((o.pathHashSize-1)<<6) | byte(hashCount)
+	plain := make([]byte, 0, 1+len(path)+1+len(extra))
+	plain = append(plain, pathLen)
+	plain = append(plain, path...)
+	if len(extra) > 0 {
+		plain = append(plain, extraType)
+		plain = append(plain, extra...)
+	} else {
+		plain = append(plain, 0xFF)
+		plain = append(plain, 0, 0, 0, 0)
+	}
+	payload, err := sealEncryptedEnvelope(shared16, destHash, srcHash, plain)
+	if err != nil {
+		return nil, fmt.Errorf("meshpkt: PATH encrypt: %w", err)
+	}
+	return EncodePacket(Packet{
+		Route:        RouteFlood,
+		Type:         PayloadPath,
+		PathHashSize: o.pathHashSize,
+		Payload:      payload,
+	})
+}
+
+// PathTextAckReturnPacketFromIdentity builds MeshCore's compatibility reply for a
+// FLOOD-routed TXT_MSG: a returned PATH packet whose encrypted extra is an ACK.
+func PathTextAckReturnPacketFromIdentity(seed [32]byte, peerPub [32]byte, timestamp uint32, attempt byte, text string, path []byte, opts ...Option) ([]byte, error) {
+	id, err := IdentityFromSeed(seed)
+	if err != nil {
+		return nil, fmt.Errorf("meshpkt: identity from seed: %w", err)
+	}
+	shared, err := id.SharedSecret(peerPub)
+	if err != nil {
+		return nil, err
+	}
+	crc := TextAckCRC(timestamp, attempt, text, peerPub[:])
+	ackHash := make([]byte, 6)
+	binary.LittleEndian.PutUint32(ackHash[:4], crc)
+	// Firmware appends a mostly-uniqueness byte and a random byte for plain TXT_MSG ACKs.
+	// The first 4 bytes are the delivery ACK CRC that receivers match.
+	_, _ = rand.Read(ackHash[5:6])
+	return PathReturnPacket(shared[:], peerPub[0], id.PublicKey[0], path, byte(PayloadAck), ackHash, opts...)
 }

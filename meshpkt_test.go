@@ -1118,6 +1118,52 @@ func TestSeedIdentityDecodeAndPathAck(t *testing.T) {
 	}
 }
 
+func TestPathTextAckReturnPacketFromIdentity(t *testing.T) {
+	var ss, rs [32]byte
+	for i := 0; i < 32; i++ {
+		ss[i] = byte(i)
+		rs[i] = byte(0x40 + i)
+	}
+	sender, _ := IdentityFromSeed(ss)
+	recip, _ := IdentityFromSeed(rs)
+	seedHexA := hex.EncodeToString(ss[:])
+	recipPubHex := hex.EncodeToString(recip.PublicKey[:])
+	path := []byte{0x25, 0x25, 0xC4, 0x20}
+	const ts = uint32(1700000123)
+
+	raw, err := PathTextAckReturnPacketFromIdentity(rs, sender.PublicKey, ts, 1, "flood hello", path, WithPathHashSize(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkt, err := DecodePacket(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkt.Route != RouteFlood || pkt.Type != PayloadPath {
+		t.Fatalf("route/type = %v/%v, want FLOOD/PATH", pkt.Route, pkt.Type)
+	}
+	if pkt.PathHashSize != 2 || len(pkt.Path) != 0 {
+		t.Fatalf("outer pathHashSize/path = %d/%x, want 2/empty", pkt.PathHashSize, pkt.Path)
+	}
+	rp, err := DecodePathPayloadFromIdentity(pkt.Payload, seedHexA, recipPubHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rp.DestHash != sender.PublicKey[0] || rp.SrcHash != recip.PublicKey[0] {
+		t.Fatalf("dest/src hash = %02x/%02x, want %02x/%02x", rp.DestHash, rp.SrcHash, sender.PublicKey[0], recip.PublicKey[0])
+	}
+	if !bytes.Equal(rp.Path, path) {
+		t.Fatalf("returned path = %x, want %x", rp.Path, path)
+	}
+	if rp.ExtraType != byte(PayloadAck) {
+		t.Fatalf("extraType = %d, want ACK", rp.ExtraType)
+	}
+	wantCRC := TextAckCRC(ts, 1, "flood hello", sender.PublicKey[:])
+	if len(rp.Extra) < 4 || binary.LittleEndian.Uint32(rp.Extra[:4]) != wantCRC {
+		t.Fatalf("embedded ACK CRC mismatch: want %08x got extra=%x", wantCRC, rp.Extra)
+	}
+}
+
 // TestDirectTextMAC_UsesFullSharedSecret guards the firmware interop fix: the
 // HMAC key must be the full 32-byte X25519 shared secret, not the first 16 bytes
 // zero-padded. Decoding with only the first 16 bytes (the historical bug) must
