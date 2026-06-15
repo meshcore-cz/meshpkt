@@ -24,7 +24,7 @@ func openEncryptedEnvelope(shared16, payload []byte, typeName string) (destHash,
 	mac := payload[2:4]
 	ciphertext := payload[4:]
 	var ok bool
-	plaintext, ok, err = openMAC(shared16[:cipherKeySize], mac, ciphertext)
+	plaintext, ok, err = openMAC(shared16, mac, ciphertext)
 	if err != nil {
 		return 0, 0, nil, fmt.Errorf("meshpkt: %s decrypt: %w", typeName, err)
 	}
@@ -36,7 +36,7 @@ func openEncryptedEnvelope(shared16, payload []byte, typeName string) (destHash,
 
 // sealEncryptedEnvelope encrypts plaintext and builds the [dest][src][mac][ct] payload.
 func sealEncryptedEnvelope(shared16 []byte, destHash, srcHash byte, plaintext []byte) ([]byte, error) {
-	mac, ciphertext, err := sealMAC(shared16[:cipherKeySize], plaintext)
+	mac, ciphertext, err := sealMAC(shared16, plaintext)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func DecodeReqPayloadFromKeys(payload []byte, privHex, peerPubHex string) (Req, 
 	if err != nil {
 		return Req{}, err
 	}
-	return DecodeReqPayload(shared[:cipherKeySize], payload)
+	return DecodeReqPayload(shared, payload)
 }
 
 // ReqPacket builds a complete REQ packet.
@@ -124,7 +124,7 @@ func ReqPacketFromKeys(privHex, peerPubHex string, reqType byte, data []byte, op
 	if err != nil {
 		return nil, err
 	}
-	return ReqPacket(shared[:cipherKeySize], peerPub[0], myPub[0], reqType, data, opts...)
+	return ReqPacket(shared, peerPub[0], myPub[0], reqType, data, opts...)
 }
 
 // ── RESPONSE ─────────────────────────────────────────────────────────────────
@@ -152,7 +152,7 @@ func DecodeResponsePayloadFromKeys(payload []byte, privHex, peerPubHex string) (
 	if err != nil {
 		return Response{}, err
 	}
-	return DecodeResponsePayload(shared[:cipherKeySize], payload)
+	return DecodeResponsePayload(shared, payload)
 }
 
 // ── PATH ─────────────────────────────────────────────────────────────────────
@@ -219,5 +219,5 @@ func DecodePathPayloadFromKeys(payload []byte, privHex, peerPubHex string) (Retu
 	if err != nil {
 		return ReturnedPath{}, err
 	}
-	return DecodePathPayload(shared[:cipherKeySize], payload)
+	return DecodePathPayload(shared, payload)
 }

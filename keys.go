@@ -72,16 +72,44 @@ func Verify(publicKey [32]byte, message []byte, signature [64]byte) bool {
 //  2. Derive our X25519 scalar: SHA-512(seed)[0:32] with standard bit clamping.
 //  3. Return X25519(scalar, montgomery_peer).
 func (id Identity) SharedSecret(peerPublicKey [32]byte) ([32]byte, error) {
+	// Derive X25519 private scalar from our Ed25519 seed.
+	h := sha512.Sum512(id.Seed[:])
+	return sharedSecretFromScalar(h[:32], peerPublicKey[:])
+}
+
+// SharedSecretFromExpanded derives the firmware-compatible shared secret from an
+// orlp/ed25519 expanded private key — SHA-512(seed), as exported by MeshCore
+// companion apps ("Export Private Key") — and a peer's Ed25519 public key.
+//
+// MeshCore companions export the 64-byte expanded private key, not the 32-byte
+// seed. Its first 32 bytes are the X25519 scalar (matching SHA-512(seed)[:32]),
+// so this derives the same secret as Identity.SharedSecret without needing the
+// seed. expandedPriv may be 64 bytes (full expanded key) or 32 bytes (just the
+// scalar); only the first 32 bytes are used. peerPublicKey is the peer's 32-byte
+// Ed25519 public key (as carried in their ADVERT).
+func SharedSecretFromExpanded(expandedPriv, peerPublicKey []byte) ([32]byte, error) {
+	if len(expandedPriv) != 32 && len(expandedPriv) != 64 {
+		return [32]byte{}, fmt.Errorf("meshpkt: expanded private key must be 32 or 64 bytes, got %d", len(expandedPriv))
+	}
+	if len(peerPublicKey) != 32 {
+		return [32]byte{}, fmt.Errorf("meshpkt: peer public key must be 32 bytes, got %d", len(peerPublicKey))
+	}
+	return sharedSecretFromScalar(expandedPriv[:32], peerPublicKey)
+}
+
+// sharedSecretFromScalar converts a peer Ed25519 public key to Montgomery form
+// and performs X25519 ECDH using scalarSeed (a 32-byte value clamped per the
+// standard bit-masking) as the private scalar.
+func sharedSecretFromScalar(scalarSeed, peerPublicKey []byte) ([32]byte, error) {
 	// Convert peer Ed25519 public key (Edwards) → X25519 (Montgomery).
-	edPoint, err := new(edwards25519.Point).SetBytes(peerPublicKey[:])
+	edPoint, err := new(edwards25519.Point).SetBytes(peerPublicKey)
 	if err != nil {
 		return [32]byte{}, fmt.Errorf("meshpkt: invalid peer public key: %w", err)
 	}
 	peerMontgomery := edPoint.BytesMontgomery()
 
-	// Derive X25519 private scalar from our Ed25519 seed.
-	h := sha512.Sum512(id.Seed[:])
-	scalar := h[:32]
+	scalar := make([]byte, 32)
+	copy(scalar, scalarSeed)
 	scalar[0] &= 248
 	scalar[31] &= 127
 	scalar[31] |= 64

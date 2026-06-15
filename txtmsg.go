@@ -2,6 +2,7 @@ package meshpkt
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -43,7 +44,7 @@ func DirectTextPacket(shared16 []byte, destHash, srcHash byte, text string, ts t
 	}
 	flags := (txtType << 2) | (attempt & 0x03)
 	plaintext := buildDirectTextPlaintext(text, flags, ts)
-	payload, err := buildDirectTextPayload(shared16[:cipherKeySize], destHash, srcHash, plaintext)
+	payload, err := buildDirectTextPayload(shared16, destHash, srcHash, plaintext)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +73,7 @@ func DecodeDirectTextPayload(shared16, payload []byte) (DirectText, error) {
 	srcHash := payload[1]
 	mac := payload[2:4]
 	ciphertext := payload[4:]
-	plaintext, ok, err := openMAC(shared16[:cipherKeySize], mac, ciphertext)
+	plaintext, ok, err := openMAC(shared16, mac, ciphertext)
 	if err != nil {
 		return DirectText{}, fmt.Errorf("meshpkt: TXT_MSG decrypt: %w", err)
 	}
@@ -91,7 +92,7 @@ func DirectTextPacketFromKeys(privHex, peerPubHex, text string, ts time.Time, op
 	if err != nil {
 		return nil, err
 	}
-	return DirectTextPacket(shared[:cipherKeySize], peerPub[0], myPub[0], text, ts, 0, 0, opts...)
+	return DirectTextPacket(shared, peerPub[0], myPub[0], text, ts, 0, 0, opts...)
 }
 
 // DirectTextPacketFromIdentity builds a flooded TXT_MSG packet addressed to peerPub, encrypted with
@@ -108,7 +109,30 @@ func DirectTextPacketFromIdentity(seed [32]byte, peerPub [32]byte, text string, 
 	if err != nil {
 		return nil, err
 	}
-	return DirectTextPacket(shared[:cipherKeySize], peerPub[0], id.PublicKey[0], text, ts, 0, attempt, opts...)
+	return DirectTextPacket(shared[:], peerPub[0], id.PublicKey[0], text, ts, 0, attempt, opts...)
+}
+
+// DecodeDirectTextPayloadFromExpanded decodes a TXT_MSG payload using the
+// FIRMWARE-COMPATIBLE shared secret derived from an orlp/ed25519 expanded private
+// key (SHA-512(seed), as exported by MeshCore companion apps) and the peer's
+// Ed25519 public key. Unlike DecodeDirectTextPayloadFromKeys (legacy native
+// X25519), this interoperates with real MeshCore nodes. expandedPrivHex may be
+// 64 bytes (full expanded key) or 32 bytes (scalar); peerEdPubHex is the peer's
+// 32-byte Ed25519 public key from their ADVERT.
+func DecodeDirectTextPayloadFromExpanded(payload []byte, expandedPrivHex, peerEdPubHex string) (DirectText, error) {
+	priv, err := hex.DecodeString(expandedPrivHex)
+	if err != nil {
+		return DirectText{}, fmt.Errorf("meshpkt: invalid private key: %w", err)
+	}
+	peer, err := hex.DecodeString(peerEdPubHex)
+	if err != nil {
+		return DirectText{}, fmt.Errorf("meshpkt: invalid peer public key: %w", err)
+	}
+	shared, err := SharedSecretFromExpanded(priv, peer)
+	if err != nil {
+		return DirectText{}, err
+	}
+	return DecodeDirectTextPayload(shared[:], payload)
 }
 
 // DecodeDirectTextPayloadFromKeys performs X25519 ECDH using privHex and
@@ -118,7 +142,7 @@ func DecodeDirectTextPayloadFromKeys(payload []byte, privHex, peerPubHex string)
 	if err != nil {
 		return DirectText{}, err
 	}
-	return DecodeDirectTextPayload(shared[:cipherKeySize], payload)
+	return DecodeDirectTextPayload(shared, payload)
 }
 
 // keysAndSecret is the shared helper: parses both keys, runs ECDH, and returns

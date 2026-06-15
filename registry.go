@@ -46,9 +46,11 @@ type RawPayload struct {
 // DecodeContext carries shared secrets and identity material needed by
 // the typed payload decoders.
 type DecodeContext struct {
-	// Shared16 is the 16-byte AES-128 key for encrypted payloads (REQ,
-	// RESPONSE, TXT_MSG, PATH). Derived via Identity.SharedSecret then
-	// take the first 16 bytes.
+	// Shared16 is the X25519 shared secret for pairwise encrypted payloads
+	// (REQ, RESPONSE, TXT_MSG, PATH), derived via Identity.SharedSecret. Pass
+	// the FULL 32-byte secret: the firmware uses its first 16 bytes as the
+	// AES-128 key and all 32 bytes as the HMAC key. (Name kept for
+	// compatibility; a 16-byte value decrypts but fails MAC against firmware.)
 	Shared16 []byte
 
 	// ChannelSecret is the 16-byte channel PSK for GRP_TXT / GRP_DATA.

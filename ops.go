@@ -669,6 +669,8 @@ var Ops = []Op{
 		Category:   "decode",
 		Label:      "Decrypt TXT_MSG",
 		PacketType: "TXT_MSG",
+		TabGroup:   "txtmsg-decode",
+		TabLabel:   "Native X25519",
 		Params: []Param{
 			{Name: "payload", Kind: ParamHex, AutoFill: "payloadHex"},
 			{Name: "privKey", Kind: ParamString, Label: "My private key", Placeholder: "64 hex chars", Action: "keypair", Secret: true},
@@ -685,6 +687,43 @@ var Ops = []Op{
 		ResultTypeName: "DirectTextPayload",
 		Run: func(args []any) (map[string]any, error) {
 			dt, err := DecodeDirectTextPayloadFromKeys(args[0].([]byte), args[1].(string), args[2].(string))
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{
+				"destHash":  fmt.Sprintf("%02x", dt.DestHash),
+				"srcHash":   fmt.Sprintf("%02x", dt.SrcHash),
+				"text":      dt.Text,
+				"timestamp": dt.Timestamp.Unix(),
+				"txtType":   int(dt.TxtType),
+				"attempt":   int(dt.Attempt),
+			}, nil
+		},
+	},
+
+	{
+		Name:       "decodeDirectTextIdentity",
+		Category:   "decode",
+		Label:      "Decrypt TXT_MSG (identity)",
+		PacketType: "TXT_MSG",
+		TabGroup:   "txtmsg-decode",
+		TabLabel:   "Identity (Ed25519)",
+		Params: []Param{
+			{Name: "payload", Kind: ParamHex, AutoFill: "payloadHex"},
+			{Name: "privKey", Kind: ParamString, Label: "My private key (64 or 32 hex bytes)", Placeholder: "128 hex chars (companion export)", Secret: true},
+			{Name: "peerPubKey", Kind: ParamString, Label: "Peer public key (Ed25519)", Placeholder: "64 hex chars"},
+		},
+		Result: []ResultField{
+			{Name: "destHash", Kind: ResultString, Label: "Dest node hash"},
+			{Name: "srcHash", Kind: ResultString, Label: "Src node hash"},
+			{Name: "text", Kind: ResultString, Label: "Message"},
+			{Name: "timestamp", Kind: ResultNumber, Label: "Timestamp"},
+			{Name: "txtType", Kind: ResultNumber, Label: "Type code"},
+			{Name: "attempt", Kind: ResultNumber, Label: "Attempt"},
+		},
+		ResultTypeName: "DirectTextPayload",
+		Run: func(args []any) (map[string]any, error) {
+			dt, err := DecodeDirectTextPayloadFromExpanded(args[0].([]byte), args[1].(string), args[2].(string))
 			if err != nil {
 				return nil, err
 			}

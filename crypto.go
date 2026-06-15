@@ -15,29 +15,35 @@ const (
 
 // sealMAC encrypts plaintext with AES-128-ECB and computes a 2-byte
 // HMAC-SHA256 tag, matching the firmware's Utils::encryptThenMAC.
-// The HMAC key is the 32-byte buffer [secret16 ‖ zero16].
-func sealMAC(secret16, plaintext []byte) (mac, ciphertext []byte, err error) {
-	ciphertext, err = aes128ECBEncrypt(secret16, plaintext)
+//
+// The firmware always derives the AES-128 key from the first CIPHER_KEY_SIZE (16)
+// bytes of the secret buffer and computes the HMAC over the full PUB_KEY_SIZE (32)
+// byte secret buffer. Pass the complete secret: a 16-byte channel PSK (zero-padded
+// to 32 here, matching the firmware's 32-byte channel.secret buffer) or a full
+// 32-byte X25519 shared secret for direct/REQ/RESPONSE/ANON_REQ packets.
+func sealMAC(secret, plaintext []byte) (mac, ciphertext []byte, err error) {
+	ciphertext, err = aes128ECBEncrypt(secret[:cipherKeySize], plaintext)
 	if err != nil {
 		return
 	}
 	hmacKey := make([]byte, cipherKeyFull)
-	copy(hmacKey, secret16)
+	copy(hmacKey, secret)
 	mac = hmacSHA256Truncated(hmacKey, ciphertext, cipherMACSize)
 	return
 }
 
 // openMAC verifies the 2-byte HMAC-SHA256 tag then decrypts ciphertext.
 // Returns ok=false (and no error) when the MAC doesn't match — caller should
-// treat this as a wrong key or corrupt packet.
-func openMAC(secret16, mac, ciphertext []byte) (plaintext []byte, ok bool, err error) {
+// treat this as a wrong key or corrupt packet. See sealMAC for the secret-buffer
+// convention (AES key = secret[:16], HMAC key = secret zero-padded to 32).
+func openMAC(secret, mac, ciphertext []byte) (plaintext []byte, ok bool, err error) {
 	hmacKey := make([]byte, cipherKeyFull)
-	copy(hmacKey, secret16)
+	copy(hmacKey, secret)
 	want := hmacSHA256Truncated(hmacKey, ciphertext, cipherMACSize)
 	if !hmac.Equal(want, mac) {
 		return nil, false, nil
 	}
-	plaintext, err = aes128ECBDecrypt(secret16, ciphertext)
+	plaintext, err = aes128ECBDecrypt(secret[:cipherKeySize], ciphertext)
 	if err != nil {
 		return nil, false, err
 	}

@@ -43,7 +43,7 @@ func DecodeAnonReqPayload(payload []byte, myPrivHex string) (AnonReq, error) {
 		return AnonReq{}, fmt.Errorf("meshpkt: ANON_REQ ECDH: %w", err)
 	}
 
-	plaintext, ok, err := openMAC(shared[:cipherKeySize], mac, ciphertext)
+	plaintext, ok, err := openMAC(shared, mac, ciphertext)
 	if err != nil {
 		return AnonReq{}, fmt.Errorf("meshpkt: ANON_REQ decrypt: %w", err)
 	}
@@ -101,7 +101,7 @@ func AnonReqPacket(destPubKey []byte, myPrivHex string, data []byte, opts ...Opt
 	binary.LittleEndian.PutUint32(plain[0:4], uint32(ts.Unix()))
 	copy(plain[4:], data)
 
-	mac, ciphertext, err := sealMAC(shared[:cipherKeySize], plain)
+	mac, ciphertext, err := sealMAC(shared, plain)
 	if err != nil {
 		return nil, fmt.Errorf("meshpkt: ANON_REQ encrypt: %w", err)
 	}

@@ -3,6 +3,7 @@ package meshpkt
 import (
 	"bytes"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/binary"
 	"encoding/hex"
 	"testing"
@@ -964,7 +965,7 @@ func TestDirectTextPacketFromIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dt, err := DecodeDirectTextPayload(shared[:cipherKeySize], pkt.Payload)
+	dt, err := DecodeDirectTextPayload(shared[:], pkt.Payload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -973,6 +974,87 @@ func TestDirectTextPacketFromIdentity(t *testing.T) {
 	}
 	if dt.Timestamp.Unix() != 1700000000 {
 		t.Fatalf("ts = %d, want 1700000000", dt.Timestamp.Unix())
+	}
+}
+
+// TestDecodeDirectTextPayloadFromExpanded verifies that a TXT_MSG can be
+// decrypted using a MeshCore companion-style expanded private key (SHA-512(seed))
+// plus the peer's Ed25519 public key — the path the web packet tool uses.
+func TestDecodeDirectTextPayloadFromExpanded(t *testing.T) {
+	var ss, rs [32]byte
+	for i := 0; i < 32; i++ {
+		ss[i] = byte(i)
+		rs[i] = byte(0x20 + i)
+	}
+	sender, _ := IdentityFromSeed(ss)
+	recip, _ := IdentityFromSeed(rs)
+
+	raw, err := DirectTextPacketFromIdentity(ss, recip.PublicKey, "expanded key decode", time.Unix(1700000000, 0), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkt, err := DecodePacket(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The recipient holds the 64-byte expanded private key (as a companion exports)
+	// and the sender's Ed25519 public key (from their ADVERT).
+	expanded := sha512.Sum512(recip.Seed[:])
+	expandedHex := hex.EncodeToString(expanded[:])
+	senderPubHex := hex.EncodeToString(sender.PublicKey[:])
+
+	dt, err := DecodeDirectTextPayloadFromExpanded(pkt.Payload, expandedHex, senderPubHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dt.Text != "expanded key decode" {
+		t.Fatalf("text = %q, want %q", dt.Text, "expanded key decode")
+	}
+
+	// A 32-byte scalar (first half of the expanded key) must decode identically.
+	dt32, err := DecodeDirectTextPayloadFromExpanded(pkt.Payload, expandedHex[:64], senderPubHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dt32.Text != "expanded key decode" {
+		t.Fatalf("32-byte scalar: text = %q, want %q", dt32.Text, "expanded key decode")
+	}
+}
+
+// TestDirectTextMAC_UsesFullSharedSecret guards the firmware interop fix: the
+// HMAC key must be the full 32-byte X25519 shared secret, not the first 16 bytes
+// zero-padded. Decoding with only the first 16 bytes (the historical bug) must
+// fail the MAC, proving the encoder commits to all 32 bytes.
+func TestDirectTextMAC_UsesFullSharedSecret(t *testing.T) {
+	var ss, rs [32]byte
+	for i := 0; i < 32; i++ {
+		ss[i] = byte(0x10 + i)
+		rs[i] = byte(0x40 + i)
+	}
+	sender, _ := IdentityFromSeed(ss)
+	recip, _ := IdentityFromSeed(rs)
+
+	raw, err := DirectTextPacketFromIdentity(ss, recip.PublicKey, "full-secret mac", time.Unix(1700000000, 0), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkt, err := DecodePacket(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	shared, err := recip.SharedSecret(sender.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Full 32-byte secret: succeeds.
+	if _, err := DecodeDirectTextPayload(shared[:], pkt.Payload); err != nil {
+		t.Fatalf("full secret should decode: %v", err)
+	}
+	// First 16 bytes only (zero-padded HMAC key): must fail the MAC.
+	if _, err := DecodeDirectTextPayload(shared[:cipherKeySize], pkt.Payload); err == nil {
+		t.Fatal("decoding with truncated 16-byte secret unexpectedly succeeded — firmware would reject it")
 	}
 }
 
