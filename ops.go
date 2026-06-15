@@ -285,6 +285,50 @@ var Ops = []Op{
 	},
 
 	{
+		Name:          "encodeDirectTextIdentityPath",
+		Category:      "encode",
+		Label:         "Encode direct message (identity + path)",
+		TabGroup:      "txtmsg",
+		TabGroupLabel: "TXT_MSG",
+		TabGroupSub:   "direct message (returned path)",
+		TabGroupDoc:   "A private text message addressed to a MeshCore peer using a previously returned PATH instead of flooding.",
+		Params: []Param{
+			{Name: "seed", Kind: ParamHex, Label: "My identity seed (32 bytes)", Placeholder: "64 hex chars", Secret: true},
+			{Name: "peerPubKey", Kind: ParamHex, Label: "Peer public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "text", Kind: ParamString, Label: "Message", Placeholder: "Hello!", Widget: "textarea"},
+			{Name: "timestamp", Kind: ParamInt, Label: "Timestamp (epoch seconds)", Placeholder: "0"},
+			{Name: "attempt", Kind: ParamInt, Label: "Attempt (0–3)", Placeholder: "0"},
+			{Name: "path", Kind: ParamHex, Label: "Returned path", Placeholder: "path hex"},
+			{Name: "pathHashSize", Kind: ParamInt, Label: "Path hash size", Choices: hashSizeChoices},
+		},
+		Result:         []ResultField{{Name: "hex", Kind: ResultString, Label: "Hex packet"}},
+		ResultTypeName: "HexResult",
+		Run: func(args []any) (map[string]any, error) {
+			seedB := args[0].([]byte)
+			peerB := args[1].([]byte)
+			path := args[5].([]byte)
+			pathHashSize := args[6].(int)
+			if len(seedB) != 32 {
+				return nil, fmt.Errorf("meshpkt: seed must be 32 bytes, got %d", len(seedB))
+			}
+			if len(peerB) != 32 {
+				return nil, fmt.Errorf("meshpkt: peer public key must be 32 bytes, got %d", len(peerB))
+			}
+			var seed, peer [32]byte
+			copy(seed[:], seedB)
+			copy(peer[:], peerB)
+			pkt, err := DirectTextPacketFromIdentityViaPath(
+				seed, peer, args[2].(string), time.Unix(int64(args[3].(int)), 0), byte(args[4].(int)),
+				path, WithPathHashSize(pathHashSize),
+			)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"hex": hex.EncodeToString(pkt)}, nil
+		},
+	},
+
+	{
 		Name:          "encodeAdvert",
 		Category:      "encode",
 		Label:         "Encode ADVERT",

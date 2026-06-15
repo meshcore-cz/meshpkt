@@ -977,6 +977,47 @@ func TestDirectTextPacketFromIdentity(t *testing.T) {
 	}
 }
 
+func TestDirectTextPacketFromIdentityViaPath(t *testing.T) {
+	var ss, rs [32]byte
+	for i := 0; i < 32; i++ {
+		ss[i] = byte(i)
+		rs[i] = byte(0x20 + i)
+	}
+	sender, _ := IdentityFromSeed(ss)
+	recip, _ := IdentityFromSeed(rs)
+	path := []byte{0xaa, 0xbb, 0xcc, 0xdd}
+
+	raw, err := DirectTextPacketFromIdentityViaPath(
+		ss, recip.PublicKey, "path dm", time.Unix(1700000000, 0), 0,
+		path, WithPathHashSize(2),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkt, err := DecodePacket(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkt.Type != PayloadTxtMsg || pkt.Route != RouteDirect {
+		t.Fatalf("type=%v route=%v, want TXT_MSG/DIRECT", pkt.Type, pkt.Route)
+	}
+	if pkt.PathHashSize != 2 || !bytes.Equal(pkt.Path, path) {
+		t.Fatalf("pathHashSize/path = %d/%x, want 2/%x", pkt.PathHashSize, pkt.Path, path)
+	}
+
+	shared, err := recip.SharedSecret(sender.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dt, err := DecodeDirectTextPayload(shared[:], pkt.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dt.Text != "path dm" {
+		t.Fatalf("text = %q, want path dm", dt.Text)
+	}
+}
+
 // TestDecodeDirectTextPayloadFromExpanded verifies that a TXT_MSG can be
 // decrypted using a MeshCore companion-style expanded private key (SHA-512(seed))
 // plus the peer's Ed25519 public key — the path the web packet tool uses.

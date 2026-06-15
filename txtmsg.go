@@ -18,17 +18,16 @@ type DirectText struct {
 	Text      string
 }
 
-// DirectTextPacket builds a flooded TXT_MSG wire packet encrypted with the
-// given 16-byte shared secret (derived from X25519 ECDH — see meshpkt.SharedSecret).
-//
-// destHash and srcHash are the first bytes of the recipient's and sender's
-// public keys respectively, used for lightweight routing.
-//
-// Note: on-air interoperability with real MeshCore devices requires the shared
-// secret to be derived the same way as the firmware (Ed25519 keys converted to
-// Montgomery form then X25519 ECDH); meshpkt.SharedSecret performs this derivation.
-// Cross-check against firmware Identity::calcSharedSecret before relying on it.
-func DirectTextPacket(shared16 []byte, destHash, srcHash byte, text string, ts time.Time, txtType, attempt byte, opts ...Option) ([]byte, error) {
+func directTextPacketWithRoute(
+	route RouteType,
+	path []byte,
+	shared16 []byte,
+	destHash, srcHash byte,
+	text string,
+	ts time.Time,
+	txtType, attempt byte,
+	opts ...Option,
+) ([]byte, error) {
 	o := &packetOptions{pathHashSize: defaultPathHashSize}
 	for _, opt := range opts {
 		opt(o)
@@ -49,11 +48,33 @@ func DirectTextPacket(shared16 []byte, destHash, srcHash byte, text string, ts t
 		return nil, err
 	}
 	return EncodePacket(Packet{
-		Route:        RouteFlood,
+		Route:        route,
 		Type:         PayloadTxtMsg,
 		PathHashSize: o.pathHashSize,
+		Path:         path,
 		Payload:      payload,
 	})
+}
+
+// DirectTextPacket builds a flooded TXT_MSG wire packet encrypted with the
+// given 16-byte shared secret (derived from X25519 ECDH — see meshpkt.SharedSecret).
+//
+// destHash and srcHash are the first bytes of the recipient's and sender's
+// public keys respectively, used for lightweight routing.
+//
+// Note: on-air interoperability with real MeshCore devices requires the shared
+// secret to be derived the same way as the firmware (Ed25519 keys converted to
+// Montgomery form then X25519 ECDH); meshpkt.SharedSecret performs this derivation.
+// Cross-check against firmware Identity::calcSharedSecret before relying on it.
+func DirectTextPacket(shared16 []byte, destHash, srcHash byte, text string, ts time.Time, txtType, attempt byte, opts ...Option) ([]byte, error) {
+	return directTextPacketWithRoute(RouteFlood, nil, shared16, destHash, srcHash, text, ts, txtType, attempt, opts...)
+}
+
+// DirectTextPacketViaPath builds a DIRECT-routed TXT_MSG using a previously learned MeshCore path.
+// The [path] bytes are the returned path hashes from a PATH payload, and [WithPathHashSize] must
+// match the hash size used by that returned path.
+func DirectTextPacketViaPath(shared16 []byte, destHash, srcHash byte, text string, ts time.Time, txtType, attempt byte, path []byte, opts ...Option) ([]byte, error) {
+	return directTextPacketWithRoute(RouteDirect, path, shared16, destHash, srcHash, text, ts, txtType, attempt, opts...)
 }
 
 // DecodeDirectTextPayload decodes a TXT_MSG payload using the given 16-byte
@@ -110,6 +131,21 @@ func DirectTextPacketFromIdentity(seed [32]byte, peerPub [32]byte, text string, 
 		return nil, err
 	}
 	return DirectTextPacket(shared[:], peerPub[0], id.PublicKey[0], text, ts, 0, attempt, opts...)
+}
+
+// DirectTextPacketFromIdentityViaPath is the path-routed counterpart of
+// DirectTextPacketFromIdentity. Use it after a peer has returned a PATH to avoid flooding subsequent
+// direct messages.
+func DirectTextPacketFromIdentityViaPath(seed [32]byte, peerPub [32]byte, text string, ts time.Time, attempt byte, path []byte, opts ...Option) ([]byte, error) {
+	id, err := IdentityFromSeed(seed)
+	if err != nil {
+		return nil, fmt.Errorf("meshpkt: identity from seed: %w", err)
+	}
+	shared, err := id.SharedSecret(peerPub)
+	if err != nil {
+		return nil, err
+	}
+	return DirectTextPacketViaPath(shared[:], peerPub[0], id.PublicKey[0], text, ts, 0, attempt, path, opts...)
 }
 
 // DecodeDirectTextPayloadFromExpanded decodes a TXT_MSG payload using the
