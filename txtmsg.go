@@ -135,6 +135,19 @@ func DecodeDirectTextPayloadFromExpanded(payload []byte, expandedPrivHex, peerEd
 	return DecodeDirectTextPayload(shared[:], payload)
 }
 
+// DecodeDirectTextPayloadFromIdentity decodes a TXT_MSG payload using the
+// firmware-compatible shared secret derived from our 32-byte identity seedHex
+// and the peer's 32-byte Ed25519 public key peerEdPubHex. This is the seed-input
+// counterpart of DecodeDirectTextPayloadFromExpanded, for callers (e.g. Sidepath
+// nodes) that hold the seed rather than a companion-exported expanded key.
+func DecodeDirectTextPayloadFromIdentity(payload []byte, seedHex, peerEdPubHex string) (DirectText, error) {
+	shared, err := identitySharedSecret(seedHex, peerEdPubHex)
+	if err != nil {
+		return DirectText{}, err
+	}
+	return DecodeDirectTextPayload(shared[:], payload)
+}
+
 // DecodeDirectTextPayloadFromKeys performs X25519 ECDH using privHex and
 // peerPubHex to recover the shared secret, then decodes the TXT_MSG payload.
 func DecodeDirectTextPayloadFromKeys(payload []byte, privHex, peerPubHex string) (DirectText, error) {

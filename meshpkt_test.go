@@ -1022,6 +1022,61 @@ func TestDecodeDirectTextPayloadFromExpanded(t *testing.T) {
 	}
 }
 
+// TestSeedIdentityDecodeAndPathAck covers the seed-input identity decoders that
+// the Sidepath Android client uses: a TXT_MSG decoded from our seed, and a PATH
+// return that embeds the firmware ACK (path_len encoded per createPathReturn).
+func TestSeedIdentityDecodeAndPathAck(t *testing.T) {
+	var ss, rs [32]byte
+	for i := 0; i < 32; i++ {
+		ss[i] = byte(i)
+		rs[i] = byte(0x20 + i)
+	}
+	sender, _ := IdentityFromSeed(ss) // A — sends the DM
+	recip, _ := IdentityFromSeed(rs)  // B — receives, then ACKs via a PATH return
+	seedHexA := hex.EncodeToString(ss[:])
+	seedHexB := hex.EncodeToString(rs[:])
+	senderPubHex := hex.EncodeToString(sender.PublicKey[:])
+	recipPubHex := hex.EncodeToString(recip.PublicKey[:])
+
+	// DM A→B decoded with B's seed + A's Ed25519 public key.
+	raw, err := DirectTextPacketFromIdentity(ss, recip.PublicKey, "seed decode", time.Unix(1700000000, 0), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkt, _ := DecodePacket(raw)
+	dt, err := DecodeDirectTextPayloadFromIdentity(pkt.Payload, seedHexB, senderPubHex)
+	if err != nil || dt.Text != "seed decode" {
+		t.Fatalf("identity decode: text=%q err=%v", dt.Text, err)
+	}
+
+	// PATH return B→A embedding the ACK (firmware createPathReturn shape:
+	// path_len=0x40 → hash_size 2, 0 hops; extra_type=ACK; extra=ack_hash[6]).
+	sharedBA, _ := recip.SharedSecret(sender.PublicKey)
+	crc := TextAckCRC(1700000000, 0, "seed decode", sender.PublicKey[:])
+	var crcLE [4]byte
+	binary.LittleEndian.PutUint32(crcLE[:], crc)
+	ackHash := append(crcLE[:], 0xAA, 0xBB) // 6-byte ack hash, first 4 = CRC
+	plain := append([]byte{0x40, byte(PayloadAck)}, ackHash...)
+	pathPayload, err := sealEncryptedEnvelope(sharedBA[:], sender.PublicKey[0], recip.PublicKey[0], plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rp, err := DecodePathPayloadFromIdentity(pathPayload, seedHexA, recipPubHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rp.Path) != 0 {
+		t.Fatalf("path bytes = %d, want 0", len(rp.Path))
+	}
+	if rp.ExtraType != byte(PayloadAck) {
+		t.Fatalf("extraType = %d, want %d (ACK)", rp.ExtraType, PayloadAck)
+	}
+	if len(rp.Extra) < 4 || binary.LittleEndian.Uint32(rp.Extra[:4]) != crc {
+		t.Fatalf("embedded ACK CRC mismatch: want %08x", crc)
+	}
+}
+
 // TestDirectTextMAC_UsesFullSharedSecret guards the firmware interop fix: the
 // HMAC key must be the full 32-byte X25519 shared secret, not the first 16 bytes
 // zero-padded. Decoding with only the first 16 bytes (the historical bug) must

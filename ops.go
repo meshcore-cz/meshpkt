@@ -1,6 +1,7 @@
 package meshpkt
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"time"
@@ -702,12 +703,12 @@ var Ops = []Op{
 	},
 
 	{
-		Name:       "decodeDirectTextIdentity",
+		Name:       "decodeDirectTextExpanded",
 		Category:   "decode",
-		Label:      "Decrypt TXT_MSG (identity)",
+		Label:      "Decrypt TXT_MSG (expanded key)",
 		PacketType: "TXT_MSG",
 		TabGroup:   "txtmsg-decode",
-		TabLabel:   "Identity (Ed25519)",
+		TabLabel:   "Companion key (expanded)",
 		Params: []Param{
 			{Name: "payload", Kind: ParamHex, AutoFill: "payloadHex"},
 			{Name: "privKey", Kind: ParamString, Label: "My private key (64 or 32 hex bytes)", Placeholder: "128 hex chars (companion export)", Secret: true},
@@ -727,14 +728,94 @@ var Ops = []Op{
 			if err != nil {
 				return nil, err
 			}
+			return directTextResult(dt), nil
+		},
+	},
+
+	{
+		Name:       "decodeDirectTextIdentity",
+		Category:   "decode",
+		Label:      "Decrypt TXT_MSG (identity)",
+		PacketType: "TXT_MSG",
+		TabGroup:   "txtmsg-decode",
+		TabLabel:   "Identity (seed)",
+		Params: []Param{
+			{Name: "payload", Kind: ParamHex, AutoFill: "payloadHex"},
+			{Name: "seed", Kind: ParamString, Label: "My identity seed (32 bytes)", Placeholder: "64 hex chars", Secret: true},
+			{Name: "peerPubKey", Kind: ParamString, Label: "Peer public key (Ed25519)", Placeholder: "64 hex chars"},
+		},
+		Result: []ResultField{
+			{Name: "destHash", Kind: ResultString, Label: "Dest node hash"},
+			{Name: "srcHash", Kind: ResultString, Label: "Src node hash"},
+			{Name: "text", Kind: ResultString, Label: "Message"},
+			{Name: "timestamp", Kind: ResultNumber, Label: "Timestamp"},
+			{Name: "txtType", Kind: ResultNumber, Label: "Type code"},
+			{Name: "attempt", Kind: ResultNumber, Label: "Attempt"},
+		},
+		ResultTypeName: "DirectTextPayload",
+		Run: func(args []any) (map[string]any, error) {
+			dt, err := DecodeDirectTextPayloadFromIdentity(args[0].([]byte), args[1].(string), args[2].(string))
+			if err != nil {
+				return nil, err
+			}
+			return directTextResult(dt), nil
+		},
+	},
+
+	{
+		Name:       "decodePathIdentity",
+		Category:   "decode",
+		Label:      "Decrypt PATH (identity)",
+		PacketType: "PATH",
+		Params: []Param{
+			{Name: "payload", Kind: ParamHex, AutoFill: "payloadHex"},
+			{Name: "seed", Kind: ParamString, Label: "My identity seed (32 bytes)", Placeholder: "64 hex chars", Secret: true},
+			{Name: "peerPubKey", Kind: ParamString, Label: "Peer public key (Ed25519)", Placeholder: "64 hex chars"},
+		},
+		Result: []ResultField{
+			{Name: "destHash", Kind: ResultString, Label: "Dest node hash"},
+			{Name: "srcHash", Kind: ResultString, Label: "Src node hash"},
+			{Name: "path", Kind: ResultString, Label: "Returned path"},
+			{Name: "extraType", Kind: ResultNumber, Label: "Extra type"},
+			{Name: "extra", Kind: ResultString, Label: "Extra payload"},
+			{Name: "ackCrc", Kind: ResultNumber, Label: "Embedded ACK CRC"},
+		},
+		ResultTypeName: "ReturnedPathPayload",
+		Run: func(args []any) (map[string]any, error) {
+			rp, err := DecodePathPayloadFromIdentity(args[0].([]byte), args[1].(string), args[2].(string))
+			if err != nil {
+				return nil, err
+			}
+			ackCrc := 0
+			if rp.ExtraType == byte(PayloadAck) && len(rp.Extra) >= 4 {
+				ackCrc = int(binary.LittleEndian.Uint32(rp.Extra[:4]))
+			}
 			return map[string]any{
-				"destHash":  fmt.Sprintf("%02x", dt.DestHash),
-				"srcHash":   fmt.Sprintf("%02x", dt.SrcHash),
-				"text":      dt.Text,
-				"timestamp": dt.Timestamp.Unix(),
-				"txtType":   int(dt.TxtType),
-				"attempt":   int(dt.Attempt),
+				"destHash":  fmt.Sprintf("%02x", rp.DestHash),
+				"srcHash":   fmt.Sprintf("%02x", rp.SrcHash),
+				"path":      hex.EncodeToString(rp.Path),
+				"extraType": int(rp.ExtraType),
+				"extra":     hex.EncodeToString(rp.Extra),
+				"ackCrc":    ackCrc,
 			}, nil
+		},
+	},
+
+	{
+		Name:     "textAckCrc",
+		Category: "compute",
+		Label:    "Compute TXT_MSG ACK CRC",
+		Params: []Param{
+			{Name: "timestamp", Kind: ParamInt, Label: "Timestamp (epoch seconds)", Placeholder: "0"},
+			{Name: "attempt", Kind: ParamInt, Label: "Attempt (0–3)", Placeholder: "0"},
+			{Name: "text", Kind: ParamString, Label: "Message", Placeholder: "Hello!"},
+			{Name: "senderPubKey", Kind: ParamHex, Label: "Sender public key (32 bytes)", Placeholder: "64 hex chars"},
+		},
+		Result:         []ResultField{{Name: "crc", Kind: ResultNumber, Label: "ACK CRC"}},
+		ResultTypeName: "AckCrcResult",
+		Run: func(args []any) (map[string]any, error) {
+			crc := TextAckCRC(uint32(args[0].(int)), byte(args[1].(int)), args[2].(string), args[3].([]byte))
+			return map[string]any{"crc": int(crc)}, nil
 		},
 	},
 
@@ -1179,6 +1260,19 @@ func opGrpDataResult(gd GrpData) map[string]any {
 		"channelHash": fmt.Sprintf("%02x", gd.ChannelHash),
 		"dataType":    int(gd.DataType),
 		"dataHex":     hex.EncodeToString(gd.Data),
+	}
+}
+
+// directTextResult builds the result map for a decoded TXT_MSG, shared by the
+// legacy-keys, expanded-key, and identity-seed decoders.
+func directTextResult(dt DirectText) map[string]any {
+	return map[string]any{
+		"destHash":  fmt.Sprintf("%02x", dt.DestHash),
+		"srcHash":   fmt.Sprintf("%02x", dt.SrcHash),
+		"text":      dt.Text,
+		"timestamp": dt.Timestamp.Unix(),
+		"txtType":   int(dt.TxtType),
+		"attempt":   int(dt.Attempt),
 	}
 }
 

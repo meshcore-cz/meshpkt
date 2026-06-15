@@ -97,6 +97,35 @@ func SharedSecretFromExpanded(expandedPriv, peerPublicKey []byte) ([32]byte, err
 	return sharedSecretFromScalar(expandedPriv[:32], peerPublicKey)
 }
 
+// identitySharedSecret derives the firmware-compatible shared secret from a hex
+// 32-byte identity seed and a hex 32-byte peer Ed25519 public key. It is the
+// seed-input counterpart of SharedSecretFromExpanded (which takes the already
+// SHA-512-expanded private key) and underpins the *FromIdentity decoders.
+func identitySharedSecret(seedHex, peerEdPubHex string) ([32]byte, error) {
+	seed, err := hex.DecodeString(seedHex)
+	if err != nil {
+		return [32]byte{}, fmt.Errorf("meshpkt: invalid seed: %w", err)
+	}
+	if len(seed) != 32 {
+		return [32]byte{}, fmt.Errorf("meshpkt: seed must be 32 bytes, got %d", len(seed))
+	}
+	peer, err := hex.DecodeString(peerEdPubHex)
+	if err != nil {
+		return [32]byte{}, fmt.Errorf("meshpkt: invalid peer public key: %w", err)
+	}
+	if len(peer) != 32 {
+		return [32]byte{}, fmt.Errorf("meshpkt: peer public key must be 32 bytes, got %d", len(peer))
+	}
+	var s, p [32]byte
+	copy(s[:], seed)
+	copy(p[:], peer)
+	id, err := IdentityFromSeed(s)
+	if err != nil {
+		return [32]byte{}, err
+	}
+	return id.SharedSecret(p)
+}
+
 // sharedSecretFromScalar converts a peer Ed25519 public key to Montgomery form
 // and performs X25519 ECDH using scalarSeed (a 32-byte value clamped per the
 // standard bit-masking) as the private scalar.

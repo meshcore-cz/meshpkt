@@ -186,14 +186,20 @@ func DecodePathPayload(shared16, payload []byte) (ReturnedPath, error) {
 	if len(plain) < 1 {
 		return ReturnedPath{}, fmt.Errorf("meshpkt: PATH plaintext too short")
 	}
-	pathLen := int(plain[0])
+	// plain[0] is the firmware-encoded path_len: high 2 bits select the per-hop hash size
+	// (hash_size = (path_len>>6)+1), low 6 bits are the hop count. The path occupies
+	// hash_count*hash_size bytes — not path_len bytes (see firmware Mesh::createPathReturn).
+	pathLenByte := int(plain[0])
+	hashSize := (pathLenByte >> 6) + 1
+	hashCount := pathLenByte & 0x3F
+	pathBytes := hashCount * hashSize
 	off := 1
-	if off+pathLen > len(plain) {
-		pathLen = len(plain) - off // tolerate truncation
+	if off+pathBytes > len(plain) {
+		pathBytes = len(plain) - off // tolerate truncation
 	}
-	path := make([]byte, pathLen)
-	copy(path, plain[off:off+pathLen])
-	off += pathLen
+	path := make([]byte, pathBytes)
+	copy(path, plain[off:off+pathBytes])
+	off += pathBytes
 
 	var extraType byte
 	var extra []byte
@@ -211,6 +217,19 @@ func DecodePathPayload(shared16, payload []byte) (ReturnedPath, error) {
 		ExtraType: extraType,
 		Extra:     extra,
 	}, nil
+}
+
+// DecodePathPayloadFromIdentity decodes a PATH payload using the firmware-compatible
+// shared secret derived from our 32-byte identity seedHex and the peer's 32-byte
+// Ed25519 public key. MeshCore answers a FLOOD-routed TXT_MSG with a PATH return
+// that embeds the ACK in ExtraType/Extra (ExtraType == PayloadAck); callers match
+// the first 4 bytes of Extra (little-endian) against the expected TextAckCRC.
+func DecodePathPayloadFromIdentity(payload []byte, seedHex, peerEdPubHex string) (ReturnedPath, error) {
+	shared, err := identitySharedSecret(seedHex, peerEdPubHex)
+	if err != nil {
+		return ReturnedPath{}, err
+	}
+	return DecodePathPayload(shared[:], payload)
 }
 
 // DecodePathPayloadFromKeys derives the shared secret and decodes a PATH payload.

@@ -38,6 +38,17 @@ export interface DirectTextPayload {
   txtType: number;
   attempt: number;
 }
+export interface ReturnedPathPayload {
+  destHash: string;
+  srcHash: string;
+  path: string;
+  extraType: number;
+  extra: string;
+  ackCrc: number;
+}
+export interface AckCrcResult {
+  crc: number;
+}
 export interface AdvertPayload {
   publicKey: string;
   timestamp: number;
@@ -136,7 +147,10 @@ export interface MeshcoreWasm {
   decodeGroupText(payload: string, channelName: string): GroupTextPayload | ErrResult;
   decodeGroupTextSecret(payload: string, secret: string): GroupTextPayload | ErrResult;
   decodeDirectText(payload: string, privKey: string, peerPubKey: string): DirectTextPayload | ErrResult;
-  decodeDirectTextIdentity(payload: string, privKey: string, peerPubKey: string): DirectTextPayload | ErrResult;
+  decodeDirectTextExpanded(payload: string, privKey: string, peerPubKey: string): DirectTextPayload | ErrResult;
+  decodeDirectTextIdentity(payload: string, seed: string, peerPubKey: string): DirectTextPayload | ErrResult;
+  decodePathIdentity(payload: string, seed: string, peerPubKey: string): ReturnedPathPayload | ErrResult;
+  textAckCrc(timestamp: number, attempt: number, text: string, senderPubKey: string): AckCrcResult | ErrResult;
   decodeAdvert(payload: string): AdvertPayload | ErrResult;
   decodeAck(payload: string): AckPayload | ErrResult;
   decodeGrpData(payload: string, channelName: string): GrpDataPayload | ErrResult;
@@ -174,7 +188,10 @@ export const meshcoreOpNames = [
   "decodeGroupText",
   "decodeGroupTextSecret",
   "decodeDirectText",
+  "decodeDirectTextExpanded",
   "decodeDirectTextIdentity",
+  "decodePathIdentity",
+  "textAckCrc",
   "decodeAdvert",
   "decodeAck",
   "decodeGrpData",
@@ -1583,14 +1600,14 @@ export const OpMetas: OpMeta[] = [
     ],
   },
   {
-    name: "decodeDirectTextIdentity",
+    name: "decodeDirectTextExpanded",
     category: "decode",
-    label: "Decrypt TXT_MSG (identity)",
+    label: "Decrypt TXT_MSG (expanded key)",
     tabGroup: "txtmsg-decode",
     tabGroupLabel: "",
     tabGroupSub: "",
     tabGroupDoc: "",
-    tabLabel: "Identity (Ed25519)",
+    tabLabel: "Companion key (expanded)",
     packetType: "TXT_MSG",
     resultTypeName: "DirectTextPayload",
     params: [
@@ -1647,6 +1664,217 @@ export const OpMetas: OpMeta[] = [
       { name: "timestamp", kind: "number", optional: false, label: "Timestamp" },
       { name: "txtType", kind: "number", optional: false, label: "Type code" },
       { name: "attempt", kind: "number", optional: false, label: "Attempt" },
+    ],
+  },
+  {
+    name: "decodeDirectTextIdentity",
+    category: "decode",
+    label: "Decrypt TXT_MSG (identity)",
+    tabGroup: "txtmsg-decode",
+    tabGroupLabel: "",
+    tabGroupSub: "",
+    tabGroupDoc: "",
+    tabLabel: "Identity (seed)",
+    packetType: "TXT_MSG",
+    resultTypeName: "DirectTextPayload",
+    params: [
+      {
+        name: "payload",
+        kind: "hex",
+        label: "",
+        placeholder: "",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "payloadHex",
+        secret: false,
+      },
+      {
+        name: "seed",
+        kind: "string",
+        label: "My identity seed (32 bytes)",
+        placeholder: "64 hex chars",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "",
+        secret: true,
+      },
+      {
+        name: "peerPubKey",
+        kind: "string",
+        label: "Peer public key (Ed25519)",
+        placeholder: "64 hex chars",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "",
+        secret: false,
+      },
+    ],
+    result: [
+      { name: "destHash", kind: "string", optional: false, label: "Dest node hash" },
+      { name: "srcHash", kind: "string", optional: false, label: "Src node hash" },
+      { name: "text", kind: "string", optional: false, label: "Message" },
+      { name: "timestamp", kind: "number", optional: false, label: "Timestamp" },
+      { name: "txtType", kind: "number", optional: false, label: "Type code" },
+      { name: "attempt", kind: "number", optional: false, label: "Attempt" },
+    ],
+  },
+  {
+    name: "decodePathIdentity",
+    category: "decode",
+    label: "Decrypt PATH (identity)",
+    tabGroup: "",
+    tabGroupLabel: "",
+    tabGroupSub: "",
+    tabGroupDoc: "",
+    tabLabel: "",
+    packetType: "PATH",
+    resultTypeName: "ReturnedPathPayload",
+    params: [
+      {
+        name: "payload",
+        kind: "hex",
+        label: "",
+        placeholder: "",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "payloadHex",
+        secret: false,
+      },
+      {
+        name: "seed",
+        kind: "string",
+        label: "My identity seed (32 bytes)",
+        placeholder: "64 hex chars",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "",
+        secret: true,
+      },
+      {
+        name: "peerPubKey",
+        kind: "string",
+        label: "Peer public key (Ed25519)",
+        placeholder: "64 hex chars",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "",
+        secret: false,
+      },
+    ],
+    result: [
+      { name: "destHash", kind: "string", optional: false, label: "Dest node hash" },
+      { name: "srcHash", kind: "string", optional: false, label: "Src node hash" },
+      { name: "path", kind: "string", optional: false, label: "Returned path" },
+      { name: "extraType", kind: "number", optional: false, label: "Extra type" },
+      { name: "extra", kind: "string", optional: false, label: "Extra payload" },
+      { name: "ackCrc", kind: "number", optional: false, label: "Embedded ACK CRC" },
+    ],
+  },
+  {
+    name: "textAckCrc",
+    category: "compute",
+    label: "Compute TXT_MSG ACK CRC",
+    tabGroup: "",
+    tabGroupLabel: "",
+    tabGroupSub: "",
+    tabGroupDoc: "",
+    tabLabel: "",
+    packetType: "",
+    resultTypeName: "AckCrcResult",
+    params: [
+      {
+        name: "timestamp",
+        kind: "int",
+        label: "Timestamp (epoch seconds)",
+        placeholder: "0",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "",
+        secret: false,
+      },
+      {
+        name: "attempt",
+        kind: "int",
+        label: "Attempt (0–3)",
+        placeholder: "0",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "",
+        secret: false,
+      },
+      {
+        name: "text",
+        kind: "string",
+        label: "Message",
+        placeholder: "Hello!",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "",
+        secret: false,
+      },
+      {
+        name: "senderPubKey",
+        kind: "hex",
+        label: "Sender public key (32 bytes)",
+        placeholder: "64 hex chars",
+        optional: false,
+        choices: [],
+        showWhen: "",
+        showValue: 0,
+        group: "",
+        action: "",
+        widget: "",
+        autoFill: "",
+        secret: false,
+      },
+    ],
+    result: [
+      { name: "crc", kind: "number", optional: false, label: "ACK CRC" },
     ],
   },
   {
