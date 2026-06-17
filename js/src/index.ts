@@ -35,29 +35,39 @@ async function loadTinyGoRuntime(url: string | URL): Promise<void> {
   if (globals.Go) return;
 
   runtimeReady ??= new Promise<void>((resolve, reject) => {
-    if (typeof document === "undefined") {
-      reject(new Error("@meshcore-cz/meshpkt currently requires a browser environment"));
-      return;
+    if (typeof document !== "undefined") {
+      const script = document.createElement("script");
+      script.src = urlString(url);
+      script.async = true;
+
+      script.onload = () => {
+        if (!globals.Go) {
+          reject(new Error("TinyGo runtime loaded but globalThis.Go was not registered"));
+          return;
+        }
+
+        resolve();
+      };
+
+      script.onerror = () => {
+        reject(new Error(`Failed to load TinyGo runtime: ${script.src}`));
+      };
+
+      document.head.appendChild(script);
+    } else {
+      import(/* @vite-ignore */ urlString(url))
+        .then(() => {
+          if (!globals.Go) {
+            reject(new Error("TinyGo runtime loaded but globalThis.Go was not registered"));
+            return;
+          }
+
+          resolve();
+        })
+        .catch((error: unknown) => {
+          reject(error);
+        });
     }
-
-    const script = document.createElement("script");
-    script.src = urlString(url);
-    script.async = true;
-
-    script.onload = () => {
-      if (!globals.Go) {
-        reject(new Error("TinyGo runtime loaded but globalThis.Go was not registered"));
-        return;
-      }
-
-      resolve();
-    };
-
-    script.onerror = () => {
-      reject(new Error(`Failed to load TinyGo runtime: ${script.src}`));
-    };
-
-    document.head.appendChild(script);
   });
 
   return runtimeReady;
@@ -67,6 +77,13 @@ async function instantiate(
   url: string | URL,
   imports: WebAssembly.Imports
 ): Promise<WebAssembly.Instance> {
+  if (isFileUrl(url) || typeof fetch === "undefined") {
+    const { readFile } = await import("node:fs/promises");
+    const bytes = await readFile(filePath(url));
+    const result = await WebAssembly.instantiate(bytes, imports);
+    return result.instance;
+  }
+
   const response = await fetch(urlString(url));
 
   if (!response.ok) {
@@ -81,6 +98,14 @@ async function instantiate(
     const result = await WebAssembly.instantiate(bytes, imports);
     return result.instance;
   }
+}
+
+function isFileUrl(url: string | URL): boolean {
+  return url instanceof URL ? url.protocol === "file:" : url.startsWith("file:");
+}
+
+function filePath(url: string | URL): string | URL {
+  return typeof url === "string" && url.startsWith("file:") ? new URL(url) : url;
 }
 
 async function waitForCall(): Promise<MeshpktCall> {

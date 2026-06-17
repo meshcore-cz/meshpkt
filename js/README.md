@@ -26,6 +26,8 @@ const meshpkt = await load();
 
 `load()` fetches and initialises the bundled TinyGo WASM module. Call it once; subsequent calls return the same promise. All methods are synchronous after that.
 
+The same loader works in browsers and Node.js. In Node.js it imports the bundled TinyGo runtime and reads the bundled `.wasm` file directly from the package.
+
 ## Error handling
 
 Every method returns either the typed result or `{ error: string }`. The `"error"` key is the reliable way to distinguish them:
