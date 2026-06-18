@@ -3,6 +3,7 @@ package meshpkt
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"time"
 )
@@ -233,6 +234,25 @@ func DecodePathPayloadFromIdentity(payload []byte, seedHex, peerEdPubHex string)
 	return DecodePathPayload(shared[:], payload)
 }
 
+// DecodePathPayloadFromExpanded decodes a PATH payload using a MeshCore
+// companion-style expanded private key (SHA-512(seed)) and the peer's Ed25519
+// public key.
+func DecodePathPayloadFromExpanded(payload []byte, expandedPrivHex, peerEdPubHex string) (ReturnedPath, error) {
+	priv, err := hex.DecodeString(expandedPrivHex)
+	if err != nil {
+		return ReturnedPath{}, fmt.Errorf("meshpkt: invalid private key: %w", err)
+	}
+	peer, err := hex.DecodeString(peerEdPubHex)
+	if err != nil {
+		return ReturnedPath{}, fmt.Errorf("meshpkt: invalid peer public key: %w", err)
+	}
+	shared, err := SharedSecretFromExpanded(priv, peer)
+	if err != nil {
+		return ReturnedPath{}, err
+	}
+	return DecodePathPayload(shared[:], payload)
+}
+
 // DecodePathPayloadFromKeys derives the shared secret and decodes a PATH payload.
 func DecodePathPayloadFromKeys(payload []byte, privHex, peerPubHex string) (ReturnedPath, error) {
 	shared, _, _, err := keysAndSecret(privHex, peerPubHex)
@@ -304,4 +324,21 @@ func PathTextAckReturnPacketFromIdentity(seed [32]byte, peerPub [32]byte, timest
 	// The first 4 bytes are the delivery ACK CRC that receivers match.
 	_, _ = rand.Read(ackHash[5:6])
 	return PathReturnPacket(shared[:], peerPub[0], id.PublicKey[0], path, byte(PayloadAck), ackHash, opts...)
+}
+
+// PathTextAckReturnPacketFromExpanded builds MeshCore's compatibility reply for
+// a FLOOD-routed TXT_MSG from a MeshCore companion-style expanded private key
+// (SHA-512(seed)) plus our Ed25519 public key. Do not pass a 64-byte expanded
+// private key to PathTextAckReturnPacketFromIdentity: that function requires the
+// original 32-byte identity seed.
+func PathTextAckReturnPacketFromExpanded(expandedPrivHex, myPubHex, peerPubHex string, timestamp uint32, attempt byte, text string, path []byte, opts ...Option) ([]byte, error) {
+	shared, myPub, peerPub, err := expandedIdentityContext(expandedPrivHex, myPubHex, peerPubHex)
+	if err != nil {
+		return nil, err
+	}
+	crc := TextAckCRC(timestamp, attempt, text, peerPub[:])
+	ackHash := make([]byte, 6)
+	binary.LittleEndian.PutUint32(ackHash[:4], crc)
+	_, _ = rand.Read(ackHash[5:6])
+	return PathReturnPacket(shared[:], peerPub[0], myPub[0], path, byte(PayloadAck), ackHash, opts...)
 }

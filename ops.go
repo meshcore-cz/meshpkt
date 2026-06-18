@@ -329,6 +329,78 @@ var Ops = []Op{
 	},
 
 	{
+		Name:          "encodeDirectTextExpanded",
+		Category:      "encode",
+		Label:         "Encode direct message (expanded key)",
+		TabGroup:      "txtmsg",
+		TabGroupLabel: "TXT_MSG",
+		TabGroupSub:   "direct message (companion expanded key)",
+		TabGroupDoc:   "A firmware-compatible private text message using a MeshCore Companion exported expanded private key (128 hex chars). Do not pass this key to the identity-seed encoder: encodeDirectTextIdentity requires the original 32-byte seed, not the expanded SHA-512 key.",
+		Params: []Param{
+			{Name: "expandedPrivKey", Kind: ParamHex, Label: "My expanded private key (64 bytes)", Placeholder: "128 hex chars", Secret: true},
+			{Name: "myPubKey", Kind: ParamHex, Label: "My public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "peerPubKey", Kind: ParamHex, Label: "Peer public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "text", Kind: ParamString, Label: "Message", Placeholder: "Hello!", Widget: "textarea"},
+			{Name: "timestamp", Kind: ParamInt, Label: "Timestamp (epoch seconds)", Placeholder: "0"},
+			{Name: "attempt", Kind: ParamInt, Label: "Attempt (0–3)", Placeholder: "0"},
+		},
+		Result:         []ResultField{{Name: "hex", Kind: ResultString, Label: "Hex packet"}},
+		ResultTypeName: "HexResult",
+		Run: func(args []any) (map[string]any, error) {
+			pkt, err := DirectTextPacketFromExpanded(
+				hex.EncodeToString(args[0].([]byte)),
+				hex.EncodeToString(args[1].([]byte)),
+				hex.EncodeToString(args[2].([]byte)),
+				args[3].(string),
+				time.Unix(int64(args[4].(int)), 0),
+				byte(args[5].(int)),
+			)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"hex": hex.EncodeToString(pkt)}, nil
+		},
+	},
+
+	{
+		Name:          "encodeDirectTextExpandedPath",
+		Category:      "encode",
+		Label:         "Encode direct message (expanded key + path)",
+		TabGroup:      "txtmsg",
+		TabGroupLabel: "TXT_MSG",
+		TabGroupSub:   "direct message (companion expanded key + returned path)",
+		TabGroupDoc:   "A firmware-compatible private text message using a MeshCore Companion exported expanded private key and a previously returned PATH. Do not pass the 128-hex expanded key to encodeDirectTextIdentityPath; that API requires the original 32-byte seed.",
+		Params: []Param{
+			{Name: "expandedPrivKey", Kind: ParamHex, Label: "My expanded private key (64 bytes)", Placeholder: "128 hex chars", Secret: true},
+			{Name: "myPubKey", Kind: ParamHex, Label: "My public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "peerPubKey", Kind: ParamHex, Label: "Peer public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "text", Kind: ParamString, Label: "Message", Placeholder: "Hello!", Widget: "textarea"},
+			{Name: "timestamp", Kind: ParamInt, Label: "Timestamp (epoch seconds)", Placeholder: "0"},
+			{Name: "attempt", Kind: ParamInt, Label: "Attempt (0–3)", Placeholder: "0"},
+			{Name: "path", Kind: ParamHex, Label: "Returned path", Placeholder: "path hex"},
+			{Name: "pathHashSize", Kind: ParamInt, Label: "Path hash size", Choices: hashSizeChoices},
+		},
+		Result:         []ResultField{{Name: "hex", Kind: ResultString, Label: "Hex packet"}},
+		ResultTypeName: "HexResult",
+		Run: func(args []any) (map[string]any, error) {
+			pkt, err := DirectTextPacketFromExpandedViaPath(
+				hex.EncodeToString(args[0].([]byte)),
+				hex.EncodeToString(args[1].([]byte)),
+				hex.EncodeToString(args[2].([]byte)),
+				args[3].(string),
+				time.Unix(int64(args[4].(int)), 0),
+				byte(args[5].(int)),
+				args[6].([]byte),
+				WithPathHashSize(args[7].(int)),
+			)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"hex": hex.EncodeToString(pkt)}, nil
+		},
+	},
+
+	{
 		Name:          "encodeAdvert",
 		Category:      "encode",
 		Label:         "Encode ADVERT",
@@ -456,6 +528,44 @@ var Ops = []Op{
 			pkt, err := PathTextAckReturnPacketFromIdentity(
 				seed, peer, uint32(args[2].(int)), byte(args[3].(int)), args[4].(string), args[5].([]byte),
 				WithPathHashSize(args[6].(int)),
+			)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"hex": hex.EncodeToString(pkt)}, nil
+		},
+	},
+
+	{
+		Name:          "encodePathTextAckExpanded",
+		Category:      "encode",
+		Label:         "Encode PATH + TXT_MSG ACK (expanded key)",
+		TabGroup:      "ack",
+		TabGroupLabel: "ACK",
+		TabGroupSub:   "return path + acknowledge flood direct message (companion expanded key)",
+		TabGroupDoc:   "Builds the MeshCore-compatible PATH return with embedded ACK using a MeshCore Companion exported expanded private key. The expanded key needs my public key as a separate parameter and must not be used as an identity seed.",
+		Params: []Param{
+			{Name: "expandedPrivKey", Kind: ParamHex, Label: "My expanded private key (64 bytes)", Placeholder: "128 hex chars", Secret: true},
+			{Name: "myPubKey", Kind: ParamHex, Label: "My public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "peerPubKey", Kind: ParamHex, Label: "Peer public key (32 bytes)", Placeholder: "64 hex chars"},
+			{Name: "timestamp", Kind: ParamInt, Label: "Message timestamp (epoch seconds)", Placeholder: "0"},
+			{Name: "attempt", Kind: ParamInt, Label: "Attempt (0–3)", Placeholder: "0"},
+			{Name: "text", Kind: ParamString, Label: "Message text", Placeholder: "Hello!", Widget: "textarea"},
+			{Name: "path", Kind: ParamHex, Label: "Inbound flood path", Optional: true, Placeholder: "path hex"},
+			{Name: "pathHashSize", Kind: ParamInt, Label: "Path hash size", Choices: hashSizeChoices},
+		},
+		Result:         []ResultField{{Name: "hex", Kind: ResultString, Label: "Hex packet"}},
+		ResultTypeName: "HexResult",
+		Run: func(args []any) (map[string]any, error) {
+			pkt, err := PathTextAckReturnPacketFromExpanded(
+				hex.EncodeToString(args[0].([]byte)),
+				hex.EncodeToString(args[1].([]byte)),
+				hex.EncodeToString(args[2].([]byte)),
+				uint32(args[3].(int)),
+				byte(args[4].(int)),
+				args[5].(string),
+				args[6].([]byte),
+				WithPathHashSize(args[7].(int)),
 			)
 			if err != nil {
 				return nil, err
@@ -869,6 +979,45 @@ var Ops = []Op{
 		ResultTypeName: "ReturnedPathPayload",
 		Run: func(args []any) (map[string]any, error) {
 			rp, err := DecodePathPayloadFromIdentity(args[0].([]byte), args[1].(string), args[2].(string))
+			if err != nil {
+				return nil, err
+			}
+			ackCrc := 0
+			if rp.ExtraType == byte(PayloadAck) && len(rp.Extra) >= 4 {
+				ackCrc = int(binary.LittleEndian.Uint32(rp.Extra[:4]))
+			}
+			return map[string]any{
+				"destHash":  fmt.Sprintf("%02x", rp.DestHash),
+				"srcHash":   fmt.Sprintf("%02x", rp.SrcHash),
+				"path":      hex.EncodeToString(rp.Path),
+				"extraType": int(rp.ExtraType),
+				"extra":     hex.EncodeToString(rp.Extra),
+				"ackCrc":    ackCrc,
+			}, nil
+		},
+	},
+
+	{
+		Name:       "decodePathExpanded",
+		Category:   "decode",
+		Label:      "Decrypt PATH (expanded key)",
+		PacketType: "PATH",
+		Params: []Param{
+			{Name: "payload", Kind: ParamHex, AutoFill: "payloadHex"},
+			{Name: "expandedPrivKey", Kind: ParamString, Label: "My expanded private key", Placeholder: "128 hex chars", Secret: true},
+			{Name: "peerPubKey", Kind: ParamString, Label: "Peer public key (Ed25519)", Placeholder: "64 hex chars"},
+		},
+		Result: []ResultField{
+			{Name: "destHash", Kind: ResultString, Label: "Dest node hash"},
+			{Name: "srcHash", Kind: ResultString, Label: "Src node hash"},
+			{Name: "path", Kind: ResultString, Label: "Returned path"},
+			{Name: "extraType", Kind: ResultNumber, Label: "Extra type"},
+			{Name: "extra", Kind: ResultString, Label: "Extra payload"},
+			{Name: "ackCrc", Kind: ResultNumber, Label: "Embedded ACK CRC"},
+		},
+		ResultTypeName: "ReturnedPathPayload",
+		Run: func(args []any) (map[string]any, error) {
+			rp, err := DecodePathPayloadFromExpanded(args[0].([]byte), args[1].(string), args[2].(string))
 			if err != nil {
 				return nil, err
 			}

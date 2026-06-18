@@ -1063,6 +1063,87 @@ func TestDecodeDirectTextPayloadFromExpanded(t *testing.T) {
 	}
 }
 
+func TestDirectTextPacketFromExpanded(t *testing.T) {
+	var ss, rs [32]byte
+	for i := 0; i < 32; i++ {
+		ss[i] = byte(i)
+		rs[i] = byte(0x20 + i)
+	}
+	sender, _ := IdentityFromSeed(ss)
+	recip, _ := IdentityFromSeed(rs)
+	expanded := sha512.Sum512(sender.Seed[:])
+	expandedHex := hex.EncodeToString(expanded[:])
+	senderPubHex := hex.EncodeToString(sender.PublicKey[:])
+	recipPubHex := hex.EncodeToString(recip.PublicKey[:])
+	recipSeedHex := hex.EncodeToString(recip.Seed[:])
+
+	raw, err := DirectTextPacketFromExpanded(expandedHex, senderPubHex, recipPubHex, "expanded encode", time.Unix(1700000000, 0), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkt, err := DecodePacket(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkt.Type != PayloadTxtMsg || pkt.Route != RouteFlood {
+		t.Fatalf("type=%v route=%v, want TXT_MSG/FLOOD", pkt.Type, pkt.Route)
+	}
+	if pkt.Payload[0] != recip.PublicKey[0] || pkt.Payload[1] != sender.PublicKey[0] {
+		t.Fatalf("dest/src hash = %02x/%02x, want %02x/%02x",
+			pkt.Payload[0], pkt.Payload[1], recip.PublicKey[0], sender.PublicKey[0])
+	}
+
+	dt, err := DecodeDirectTextPayloadFromIdentity(pkt.Payload, recipSeedHex, senderPubHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dt.Text != "expanded encode" || dt.Attempt != 1 {
+		t.Fatalf("text/attempt = %q/%d, want expanded encode/1", dt.Text, dt.Attempt)
+	}
+}
+
+func TestDirectTextPacketFromExpandedViaPath(t *testing.T) {
+	var ss, rs [32]byte
+	for i := 0; i < 32; i++ {
+		ss[i] = byte(i)
+		rs[i] = byte(0x20 + i)
+	}
+	sender, _ := IdentityFromSeed(ss)
+	recip, _ := IdentityFromSeed(rs)
+	expanded := sha512.Sum512(sender.Seed[:])
+	expandedHex := hex.EncodeToString(expanded[:])
+	senderPubHex := hex.EncodeToString(sender.PublicKey[:])
+	recipPubHex := hex.EncodeToString(recip.PublicKey[:])
+	recipSeedHex := hex.EncodeToString(recip.Seed[:])
+	path := []byte{0xaa, 0xbb, 0xcc, 0xdd}
+
+	raw, err := DirectTextPacketFromExpandedViaPath(
+		expandedHex, senderPubHex, recipPubHex, "expanded path", time.Unix(1700000000, 0), 2,
+		path, WithPathHashSize(2),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkt, err := DecodePacket(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkt.Type != PayloadTxtMsg || pkt.Route != RouteDirect {
+		t.Fatalf("type=%v route=%v, want TXT_MSG/DIRECT", pkt.Type, pkt.Route)
+	}
+	if pkt.PathHashSize != 2 || !bytes.Equal(pkt.Path, path) {
+		t.Fatalf("pathHashSize/path = %d/%x, want 2/%x", pkt.PathHashSize, pkt.Path, path)
+	}
+
+	dt, err := DecodeDirectTextPayloadFromIdentity(pkt.Payload, recipSeedHex, senderPubHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dt.Text != "expanded path" || dt.Attempt != 2 {
+		t.Fatalf("text/attempt = %q/%d, want expanded path/2", dt.Text, dt.Attempt)
+	}
+}
+
 // TestSeedIdentityDecodeAndPathAck covers the seed-input identity decoders that
 // the Sidepath Android client uses: a TXT_MSG decoded from our seed, and a PATH
 // return that embeds the firmware ACK (path_len encoded per createPathReturn).
@@ -1149,6 +1230,14 @@ func TestPathTextAckReturnPacketFromIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	senderExpanded := sha512.Sum512(sender.Seed[:])
+	rpExpanded, err := DecodePathPayloadFromExpanded(pkt.Payload, hex.EncodeToString(senderExpanded[:]), recipPubHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(rpExpanded.Path, path) || rpExpanded.ExtraType != byte(PayloadAck) {
+		t.Fatalf("expanded decode path/extra = %x/%d, want %x/ACK", rpExpanded.Path, rpExpanded.ExtraType, path)
+	}
 	if rp.DestHash != sender.PublicKey[0] || rp.SrcHash != recip.PublicKey[0] {
 		t.Fatalf("dest/src hash = %02x/%02x, want %02x/%02x", rp.DestHash, rp.SrcHash, sender.PublicKey[0], recip.PublicKey[0])
 	}
@@ -1161,6 +1250,50 @@ func TestPathTextAckReturnPacketFromIdentity(t *testing.T) {
 	wantCRC := TextAckCRC(ts, 1, "flood hello", sender.PublicKey[:])
 	if len(rp.Extra) < 4 || binary.LittleEndian.Uint32(rp.Extra[:4]) != wantCRC {
 		t.Fatalf("embedded ACK CRC mismatch: want %08x got extra=%x", wantCRC, rp.Extra)
+	}
+}
+
+func TestPathTextAckReturnPacketFromExpanded(t *testing.T) {
+	var ss, rs [32]byte
+	for i := 0; i < 32; i++ {
+		ss[i] = byte(i)
+		rs[i] = byte(0x40 + i)
+	}
+	sender, _ := IdentityFromSeed(ss)
+	recip, _ := IdentityFromSeed(rs)
+	expanded := sha512.Sum512(recip.Seed[:])
+	expandedHex := hex.EncodeToString(expanded[:])
+	seedHexA := hex.EncodeToString(sender.Seed[:])
+	senderPubHex := hex.EncodeToString(sender.PublicKey[:])
+	recipPubHex := hex.EncodeToString(recip.PublicKey[:])
+	path := []byte{0x25, 0x25, 0xC4, 0x20}
+	const ts = uint32(1700000123)
+
+	raw, err := PathTextAckReturnPacketFromExpanded(expandedHex, recipPubHex, senderPubHex, ts, 1, "flood hello", path, WithPathHashSize(2))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkt, err := DecodePacket(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkt.Route != RouteFlood || pkt.Type != PayloadPath {
+		t.Fatalf("route/type = %v/%v, want FLOOD/PATH", pkt.Route, pkt.Type)
+	}
+
+	rp, err := DecodePathPayloadFromIdentity(pkt.Payload, seedHexA, recipPubHex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rp.DestHash != sender.PublicKey[0] || rp.SrcHash != recip.PublicKey[0] {
+		t.Fatalf("dest/src hash = %02x/%02x, want %02x/%02x", rp.DestHash, rp.SrcHash, sender.PublicKey[0], recip.PublicKey[0])
+	}
+	if !bytes.Equal(rp.Path, path) {
+		t.Fatalf("returned path = %x, want %x", rp.Path, path)
+	}
+	wantCRC := TextAckCRC(ts, 1, "flood hello", sender.PublicKey[:])
+	if rp.ExtraType != byte(PayloadAck) || len(rp.Extra) < 4 || binary.LittleEndian.Uint32(rp.Extra[:4]) != wantCRC {
+		t.Fatalf("ACK extra mismatch: type=%d extra=%x want crc=%08x", rp.ExtraType, rp.Extra, wantCRC)
 	}
 }
 

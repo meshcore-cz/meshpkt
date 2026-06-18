@@ -121,6 +121,11 @@ func DirectTextPacketFromKeys(privHex, peerPubHex, text string, ts time.Time, op
 // SHA-512(seed)[:32] clamp → ed→Montgomery → X25519). Unlike DirectTextPacketFromKeys (which uses
 // the legacy native-X25519 keypair path), this interoperates with real MeshCore nodes. dest/src
 // hashes are the first byte of the recipient's and our public keys.
+//
+// The seed is the original 32-byte identity seed. Do not pass a 64-byte / 128-hex
+// MeshCore Companion exported expanded private key here, and do not slice that
+// expanded key to 32 bytes: it is SHA-512(seed) material, not the seed. Use
+// DirectTextPacketFromExpanded for companion exports.
 func DirectTextPacketFromIdentity(seed [32]byte, peerPub [32]byte, text string, ts time.Time, attempt byte, opts ...Option) ([]byte, error) {
 	id, err := IdentityFromSeed(seed)
 	if err != nil {
@@ -135,7 +140,8 @@ func DirectTextPacketFromIdentity(seed [32]byte, peerPub [32]byte, text string, 
 
 // DirectTextPacketFromIdentityViaPath is the path-routed counterpart of
 // DirectTextPacketFromIdentity. Use it after a peer has returned a PATH to avoid flooding subsequent
-// direct messages.
+// direct messages. It has the same seed-vs-expanded-key requirement as
+// DirectTextPacketFromIdentity.
 func DirectTextPacketFromIdentityViaPath(seed [32]byte, peerPub [32]byte, text string, ts time.Time, attempt byte, path []byte, opts ...Option) ([]byte, error) {
 	id, err := IdentityFromSeed(seed)
 	if err != nil {
@@ -146,6 +152,57 @@ func DirectTextPacketFromIdentityViaPath(seed [32]byte, peerPub [32]byte, text s
 		return nil, err
 	}
 	return DirectTextPacketViaPath(shared[:], peerPub[0], id.PublicKey[0], text, ts, 0, attempt, path, opts...)
+}
+
+// DirectTextPacketFromExpanded builds a flooded TXT_MSG packet from a MeshCore
+// companion-style expanded private key (SHA-512(seed)) plus our Ed25519 public
+// key. The public key is required because an expanded private key cannot recover
+// the original Ed25519 public key. This is the correct encoder for 128-hex
+// private keys exported by MeshCore Companion apps.
+func DirectTextPacketFromExpanded(expandedPrivHex, myPubHex, peerPubHex, text string, ts time.Time, attempt byte, opts ...Option) ([]byte, error) {
+	shared, myPub, peerPub, err := expandedIdentityContext(expandedPrivHex, myPubHex, peerPubHex)
+	if err != nil {
+		return nil, err
+	}
+	return DirectTextPacket(shared[:], peerPub[0], myPub[0], text, ts, 0, attempt, opts...)
+}
+
+// DirectTextPacketFromExpandedViaPath is the path-routed counterpart of
+// DirectTextPacketFromExpanded. Use it when a peer has returned a PATH.
+func DirectTextPacketFromExpandedViaPath(expandedPrivHex, myPubHex, peerPubHex, text string, ts time.Time, attempt byte, path []byte, opts ...Option) ([]byte, error) {
+	shared, myPub, peerPub, err := expandedIdentityContext(expandedPrivHex, myPubHex, peerPubHex)
+	if err != nil {
+		return nil, err
+	}
+	return DirectTextPacketViaPath(shared[:], peerPub[0], myPub[0], text, ts, 0, attempt, path, opts...)
+}
+
+func expandedIdentityContext(expandedPrivHex, myPubHex, peerPubHex string) (shared [32]byte, myPub [32]byte, peerPub [32]byte, err error) {
+	priv, err := hex.DecodeString(expandedPrivHex)
+	if err != nil {
+		return shared, myPub, peerPub, fmt.Errorf("meshpkt: invalid expanded private key: %w", err)
+	}
+	myPubB, err := hex.DecodeString(myPubHex)
+	if err != nil {
+		return shared, myPub, peerPub, fmt.Errorf("meshpkt: invalid public key: %w", err)
+	}
+	if len(myPubB) != 32 {
+		return shared, myPub, peerPub, fmt.Errorf("meshpkt: public key must be 32 bytes, got %d", len(myPubB))
+	}
+	peerPubB, err := hex.DecodeString(peerPubHex)
+	if err != nil {
+		return shared, myPub, peerPub, fmt.Errorf("meshpkt: invalid peer public key: %w", err)
+	}
+	if len(peerPubB) != 32 {
+		return shared, myPub, peerPub, fmt.Errorf("meshpkt: peer public key must be 32 bytes, got %d", len(peerPubB))
+	}
+	shared, err = SharedSecretFromExpanded(priv, peerPubB)
+	if err != nil {
+		return shared, myPub, peerPub, err
+	}
+	copy(myPub[:], myPubB)
+	copy(peerPub[:], peerPubB)
+	return shared, myPub, peerPub, nil
 }
 
 // DecodeDirectTextPayloadFromExpanded decodes a TXT_MSG payload using the

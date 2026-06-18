@@ -97,6 +97,15 @@ err         = meshpkt.VerifyAdvert(signed)
 
 Derivation: `scalar = SHA-512(seed)[0:32]` with RFC 7748 bit clamping, peer public key converted Edwards→Montgomery via `BytesMontgomery()`.
 
+### Seed vs Companion expanded private key
+
+MeshCore code commonly deals with two private-key shapes that are easy to mix up:
+
+- **Identity seed:** 32 bytes / 64 hex chars. Use this with `IdentityFromSeed`, `DirectTextPacketFromIdentity`, `DirectTextPacketFromIdentityViaPath`, `PathTextAckReturnPacketFromIdentity`, and the `encode*Identity*` JS ops.
+- **Companion expanded private key:** 64 bytes / 128 hex chars, usually exported by MeshCore Companion apps. This is `SHA-512(seed)` material, not the seed. Use this with `DirectTextPacketFromExpanded`, `DirectTextPacketFromExpandedViaPath`, `PathTextAckReturnPacketFromExpanded`, and the `encode*Expanded*` JS ops. You must also pass your Ed25519 public key because the expanded key cannot recover it.
+
+Do **not** pass a 128-hex expanded key to an identity-seed encoder, and do **not** fix it by slicing the first 64 hex chars. That produces valid-looking packets encrypted as the wrong identity, so peers will not decrypt or ACK them.
+
 ## Packet validation layers
 
 ```go
@@ -226,6 +235,7 @@ Copy [`bindings/wasm-lite.main.go.tmpl`](bindings/wasm-lite.main.go.tmpl) for Ti
 ## Notes
 
 - `Identity.SharedSecret` uses the same Ed25519 → X25519 conversion as firmware (`Identity::calcSharedSecret`). The legacy `SharedSecret(privHex, pubHex)` function uses native X25519 and is **not** firmware-compatible for on-air hardware.
+- `encode*Identity*` APIs require the original 32-byte seed. MeshCore Companion 128-hex expanded exports require the `encode*Expanded*` APIs plus your public key.
 - Channel (GRP_TXT / GRP_DATA) crypto matches firmware and round-trips correctly.
 - `EncodePacket` and `DecodePacket` enforce all firmware validation rules and reject reserved/invalid fields.
 

@@ -113,6 +113,15 @@ console.log(msg.text);     // "Hey, direct!"
 console.log(msg.destHash); // first-byte hash of recipient's public key
 ```
 
+For real MeshCore node identities, prefer the identity-compatible APIs:
+
+- `encodeDirectTextIdentity(seed, peerPubKey, ...)` takes the original 32-byte seed (`64` hex chars).
+- `encodeDirectTextExpanded(expandedPrivKey, myPubKey, peerPubKey, ...)` takes a MeshCore Companion exported expanded private key (`128` hex chars) plus your public key.
+- The `*Path` variants send via a returned path instead of flooding.
+- `encodePathTextAckIdentity` and `encodePathTextAckExpanded` build the PATH+ACK reply for a FLOOD-routed TXT_MSG.
+
+Do not pass a `128`-hex Companion expanded key to an `*Identity*` encoder, and do not slice it to `64` hex chars. It is `SHA-512(seed)` material, not the seed, and packets encrypted that way will look valid but will not be decrypted or ACKed by the peer.
+
 ---
 
 ### Node advertisements (ADVERT)
