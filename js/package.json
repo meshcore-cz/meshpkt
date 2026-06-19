@@ -1,6 +1,6 @@
 {
   "name": "@meshcore-cz/meshpkt",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "MeshCore radio packet codec for JavaScript and TypeScript, powered by WebAssembly",
   "type": "module",
   "license": "MIT",
