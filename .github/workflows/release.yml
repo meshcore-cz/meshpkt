@@ -5,13 +5,69 @@ on:
     tags:
       - "v*.*.*"
 
-permissions:
-  contents: write
-
 jobs:
-  release:
+  npm-publish:
+    name: Publish npm package
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Install TinyGo
+        uses: tinygo-org/setup-tinygo@v1
+        with:
+          tinygo-version: "0.38.0"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Validate library
+        run: make check
+
+      - name: Build and validate JS/WASM package
+        run: make js-check
+
+      - name: Verify npm version matches Git tag
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          npm_version="$(node -p "require('./js/package.json').version")"
+          if [ "$tag_version" != "$npm_version" ]; then
+            echo "Version mismatch: Git tag is $GITHUB_REF_NAME, js/package.json is $npm_version"
+            exit 1
+          fi
+          echo "npm version $npm_version matches Git tag $GITHUB_REF_NAME"
+
+      - name: Publish npm package
+        working-directory: js
+        run: |
+          npm_version="$(node -p "require('./package.json').version")"
+          if npm view "@meshcore-cz/meshpkt@$npm_version" version >/dev/null 2>&1; then
+            echo "npm version $npm_version already exists; skipping publish"
+          else
+            npm publish
+          fi
+
+  github-release:
     name: Publish GitHub release
     runs-on: ubuntu-latest
+    needs: npm-publish
+
+    permissions:
+      contents: write
 
     steps:
       - name: Check out repository
