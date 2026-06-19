@@ -24,7 +24,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install TinyGo
-        uses: tinygo-org/setup-tinygo@v1
+        uses: acifani/setup-tinygo@v3
         with:
           tinygo-version: "0.38.0"
 
