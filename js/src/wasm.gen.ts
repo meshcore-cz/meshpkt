@@ -57,6 +57,10 @@ export interface AdvertPayload {
   hasGPS: boolean;
   lat?: number;
   lon?: number;
+  feat1?: number;
+  feat1Hex?: string;
+  feat2?: number;
+  feat2Hex?: string;
   sigVerified: boolean;
 }
 export interface AckPayload {
@@ -2633,6 +2637,10 @@ export const OpMetas: OpMeta[] = [
       { name: "hasGPS", kind: "boolean", optional: false, label: "Has GPS" },
       { name: "lat", kind: "number", optional: true, label: "Latitude" },
       { name: "lon", kind: "number", optional: true, label: "Longitude" },
+      { name: "feat1", kind: "number", optional: true, label: "Feature flags 1" },
+      { name: "feat1Hex", kind: "string", optional: true, label: "Feature flags 1 (hex)" },
+      { name: "feat2", kind: "number", optional: true, label: "Feature flags 2" },
+      { name: "feat2Hex", kind: "string", optional: true, label: "Feature flags 2 (hex)" },
       { name: "sigVerified", kind: "boolean", optional: false, label: "Signature verified" },
     ],
   },

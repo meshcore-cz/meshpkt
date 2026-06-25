@@ -1071,6 +1071,10 @@ var Ops = []Op{
 			{Name: "hasGPS", Kind: ResultBool, Label: "Has GPS"},
 			{Name: "lat", Kind: ResultNumber, Optional: true, Label: "Latitude"},
 			{Name: "lon", Kind: ResultNumber, Optional: true, Label: "Longitude"},
+			{Name: "feat1", Kind: ResultNumber, Optional: true, Label: "Feature flags 1"},
+			{Name: "feat1Hex", Kind: ResultString, Optional: true, Label: "Feature flags 1 (hex)"},
+			{Name: "feat2", Kind: ResultNumber, Optional: true, Label: "Feature flags 2"},
+			{Name: "feat2Hex", Kind: ResultString, Optional: true, Label: "Feature flags 2 (hex)"},
 			{Name: "sigVerified", Kind: ResultBool, Label: "Signature verified"},
 		},
 		ResultTypeName: "AdvertPayload",
@@ -1091,6 +1095,14 @@ var Ops = []Op{
 			if adv.HasGPS {
 				result["lat"] = adv.Lat
 				result["lon"] = adv.Lon
+			}
+			if adv.HasFeat1 {
+				result["feat1"] = int(adv.Feature1)
+				result["feat1Hex"] = fmt.Sprintf("0x%04X", adv.Feature1)
+			}
+			if adv.HasFeat2 {
+				result["feat2"] = int(adv.Feature2)
+				result["feat2Hex"] = fmt.Sprintf("0x%04X", adv.Feature2)
 			}
 			return result, nil
 		},
